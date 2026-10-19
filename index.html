@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Administrativo — Barbearia D.E.D</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css?v=3.0">
+</head>
+<body>
+  <!-- Container de Toasts para Notificações Modernas -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <!-- Backdrop para Drawer da Sidebar em Telas Mobile -->
+  <div id="sidebarBackdrop" class="admin-backdrop"></div>
+
+  <div class="admin-wrapper">
+    <!-- Barra Superior Fixa para Dispositivos Móveis -->
+    <header class="admin-mobile-bar">
+      <div class="admin-mobile-brand">
+        <span style="font-size: 1.3rem;">✂️</span>
+        <span>Barbearia D.E.D</span>
+      </div>
+      <button type="button" id="sidebarToggle" class="sidebar-toggle-btn" aria-label="Abrir Menu Lateral">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Sidebar Lateral Adaptável (Drawer no Mobile, Fixa no Desktop) -->
+    <aside class="admin-sidebar" id="adminSidebar">
+      <div class="sidebar-brand">
+        <button type="button" id="sidebarClose" class="sidebar-close-btn" aria-label="Fechar menu">&times;</button>
+        <!-- Logotipo SVG Vetorial Oficial -->
+        <svg class="sidebar-logo" viewBox="0 0 300 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sidebarLogoTitle">
+          <title id="sidebarLogoTitle">Barbearia D.E.D</title>
+          <circle cx="60" cy="60" r="48" fill="none" stroke="#D4AF37" stroke-width="3" opacity="0.8"/>
+          <circle cx="60" cy="60" r="42" fill="none" stroke="#D4AF37" stroke-width="1" opacity="0.4"/>
+          <circle cx="38" cy="40" r="7" fill="none" stroke="#D4AF37" stroke-width="2.5"/>
+          <path d="M 38 40 L 55 58" stroke="#D4AF37" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <line x1="35" y1="37" x2="41" y2="43" stroke="#D4AF37" stroke-width="1.5" opacity="0.6"/>
+          <circle cx="38" cy="80" r="7" fill="none" stroke="#D4AF37" stroke-width="2.5"/>
+          <path d="M 38 80 L 55 62" stroke="#D4AF37" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <line x1="35" y1="83" x2="41" y2="77" stroke="#D4AF37" stroke-width="1.5" opacity="0.6"/>
+          <rect x="58" y="38" width="6" height="44" fill="#D4AF37"/>
+          <rect x="67" y="38" width="6" height="44" fill="#D4AF37"/>
+          <rect x="76" y="38" width="6" height="44" fill="#D4AF37"/>
+          <line x1="55" y1="35" x2="85" y2="35" stroke="#D4AF37" stroke-width="3"/>
+          <line x1="55" y1="85" x2="85" y2="85" stroke="#D4AF37" stroke-width="3"/>
+          <line x1="50" y1="25" x2="70" y2="20" stroke="#D4AF37" stroke-width="1.5" opacity="0.5"/>
+          <line x1="50" y1="95" x2="70" y2="100" stroke="#D4AF37" stroke-width="1.5" opacity="0.5"/>
+          <text x="125" y="48" font-family="'Inter', serif" font-size="18" font-weight="600" letter-spacing="1px" fill="#D4AF37">BARBEARIA</text>
+          <text x="125" y="84" font-family="'Inter', serif" font-size="34" font-weight="800" letter-spacing="2px" fill="#D4AF37">D.E.D</text>
+        </svg>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active">
+          <span>📊</span> Painel Geral
+        </a>
+        <a href="../index.html" class="nav-item">
+          <span>🌐</span> Visualizar Site
+        </a>
+        <a href="../agendar.html" class="nav-item">
+          <span>📅</span> Novo Agendamento
+        </a>
+        <a href="../consulta.html" class="nav-item">
+          <span>🔍</span> Buscar Agendamento
+        </a>
+      </nav>
+
+      <footer style="margin-top: auto; color: var(--text-subtle); font-size: 0.8rem; text-align: center; padding-top: 1.5rem; border-top: 1px solid var(--border-subtle);">
+        Barbearia D.E.D &bull; v2.5 Pro
+      </footer>
+    </aside>
+
+    <!-- Conteúdo Principal -->
+    <main class="admin-main" id="adminMain">
+      <header class="admin-header-row">
+        <div>
+          <h1>Dashboard</h1>
+          <p class="subtitle" style="margin: 0.25rem 0 0 0;">Gestão de horários, fluxo diário e faturamento.</p>
+        </div>
+        <div class="admin-top-actions">
+          <button type="button" id="closeAgenda" class="btn admin-action-btn">
+            <span>🔒</span> Bloquear Agenda
+          </button>
+        </div>
+      </header>
+
+      <!-- Cards de Métricas -->
+      <section class="admin-card-grid">
+        <article class="admin-stat-card">
+          <div class="stat-icon">📅</div>
+          <div class="stat-content">
+            <span>Agendamentos do Dia</span>
+            <strong id="totalDayCount">0</strong>
+          </div>
+        </article>
+        <article class="admin-stat-card">
+          <div class="stat-icon">🕒</div>
+          <div class="stat-content">
+            <span>Próximo Atendimento</span>
+            <strong id="nextAppointmentTime">--:--</strong>
+          </div>
+        </article>
+        <article class="admin-stat-card highlight">
+          <div class="stat-icon">💰</div>
+          <div class="stat-content">
+            <span>Faturamento Previsto</span>
+            <strong id="revenueValue">R$ ••••</strong>
+            <button id="showRevenue" class="btn-text">Mostrar Saldo</button>
+          </div>
+        </article>
+      </section>
+
+      <!-- Filtros e Busca -->
+      <section class="admin-filters">
+        <div class="filter-group">
+          <label for="filterDate">Data de Atendimento</label>
+          <input type="date" id="filterDate" class="admin-input">
+        </div>
+        <div class="filter-group search">
+          <label for="filterText">Pesquisar Cliente</label>
+          <input type="text" id="filterText" class="admin-input" placeholder="Digite nome ou telefone...">
+        </div>
+        <button id="clearFilters" class="btn outline" style="height: 3.2rem;">
+          Limpar Filtros
+        </button>
+      </section>
+
+      <!-- Tabela Responsiva de Agendamentos -->
+      <div class="table-responsive">
+        <div class="admin-table-container">
+          <div class="admin-table-header">
+            <div class="col-name">CLIENTE</div>
+            <div class="col-phone">WHATSAPP</div>
+            <div class="col-service">SERVIÇO</div>
+            <div class="col-time">HORÁRIO</div>
+            <div class="col-actions">AÇÕES</div>
+          </div>
+          <section id="adminBookings"></section>
+          <div id="emptyAdmin" class="no-result hidden" style="margin: 1.5rem; border-radius: 12px;"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal de Bloqueio de Agenda -->
+  <div id="closeAgendaModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="closeModalTitle">
+      <h2 id="closeModalTitle" style="color: var(--gold); display: flex; align-items: center; gap: 0.5rem; margin-top: 0;">
+        <span>🔒</span> Bloquear Agenda
+      </h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.25rem;">
+        Bloqueie o expediente para a data <strong id="closeModalDate" style="color: var(--white); font-weight: 700;">--/--/----</strong>. Novos agendamentos não serão permitidos.
+      </p>
+      <div class="field full" style="margin-bottom: 1.25rem;">
+        <label for="closeReason">Motivo / Justificativa</label>
+        <input type="text" id="closeReason" class="admin-input" placeholder="Ex: Feriado, manutenção, folga...">
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="cancelCloseBtn" class="btn outline">Cancelar</button>
+        <button type="button" id="confirmCloseBtn" class="btn" style="background: linear-gradient(90deg, #ef4444, #dc2626); border: 0; color: #fff;">Confirmar Bloqueio</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Confirmação de Exclusão de Agendamento -->
+  <div id="confirmDeleteModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+      <h2 id="deleteModalTitle" style="color: #ff6b6b; display: flex; align-items: center; gap: 0.5rem; margin-top: 0;">
+        <span>🗑️</span> Cancelar Agendamento
+      </h2>
+      <p id="deleteModalText" style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem; line-height: 1.6;">
+        Deseja cancelar o horário deste cliente? A vaga será liberada imediatamente.
+      </p>
+      <div class="modal-actions">
+        <button type="button" id="cancelDeleteBtn" class="btn outline">Voltar</button>
+        <button type="button" id="confirmDeleteBtn" class="btn" style="background: linear-gradient(90deg, #ef4444, #dc2626); border: 0; color: #fff;">Sim, Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="painel.js?v=2.0"></script>
+</body>
+</html>
