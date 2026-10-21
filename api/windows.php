@@ -39,7 +39,8 @@ $arquivo = '/var/lib/monitoramento/windows.json';
 $resultado = [
     'maquina' => 'Windows',
     'recebido_em' => gmdate('c'),
-    'discos' => $dados['discos']
+    'discos' => $dados['discos'],
+    'recursos' => isset($dados['recursos']) && is_array($dados['recursos']) ? $dados['recursos'] : null
 ];
 
 $json = json_encode($resultado, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);

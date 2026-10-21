@@ -1,6 +1,23 @@
 <?php
 declare(strict_types=1);
 
+session_start();
+
+// Proteção de autenticação: redireciona ao login se não autenticado
+if (empty($_SESSION['usuario_logado'])) {
+    if (isset($_GET['api'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(401);
+        echo json_encode(['sucesso' => false, 'erro' => 'Sessão expirada ou não autenticada']);
+        exit;
+    }
+    header('Location: login.php');
+    exit;
+}
+
+$usuarioLogado = (string)$_SESSION['usuario_logado'];
+
+
 /**
  * PAINEL DE MONITORAMENTO DE INFRAESTRUTURA
  * Interface de Navegação Circular 360 Graus (Wheel Navigation)
@@ -251,7 +268,21 @@ function coletarArmazenamentoWindows(): array
         'segundos_atras' => null,
         'timestamp' => null,
         'data_formatada' => 'Aguardando sincronização',
-        'discos' => []
+        'discos' => [],
+        'recursos' => [
+            'ip' => WINDOWS_IP,
+            'uptime' => 'Ativo',
+            'mem_resumo' => '—',
+            'mem_usada_gb' => '—',
+            'mem_total_gb' => '—',
+            'saude_disco' => '100% Saudável (Running)',
+            'disco_modelo' => 'KINGSTON SA400S37120G',
+            'disco_capacidade_gb' => '111,8 GB'
+        ],
+        'disco_fisico' => [
+            'modelo' => 'KINGSTON SA400S37120G',
+            'total_gb' => '111,8 GB'
+        ]
     ];
 
     // Checagem real de conectividade via Ping ICMP
@@ -260,7 +291,12 @@ function coletarArmazenamentoWindows(): array
     @exec("ping -c 1 -W 1 " . WINDOWS_IP . " 2>/dev/null", $pingOut, $pingRet);
     $resultado['ping_online'] = ($pingRet === 0);
 
-    if (!file_exists(WINDOWS_JSON)) {
+    $caminhoWindows = file_exists(__DIR__ . '/windows.json') ? __DIR__ . '/windows.json' : WINDOWS_JSON;
+    if (!file_exists($caminhoWindows) && file_exists(WINDOWS_JSON)) {
+        $caminhoWindows = WINDOWS_JSON;
+    }
+
+    if (!file_exists($caminhoWindows)) {
         if ($resultado['ping_online']) {
             $resultado['status_texto'] = 'Conectado (Sem dados)';
             $resultado['status_classe'] = 'warn';
@@ -271,7 +307,7 @@ function coletarArmazenamentoWindows(): array
         return $resultado;
     }
 
-    $conteudo = @file_get_contents(WINDOWS_JSON);
+    $conteudo = @file_get_contents($caminhoWindows);
     if ($conteudo === false) {
         return $resultado;
     }
@@ -281,7 +317,7 @@ function coletarArmazenamentoWindows(): array
         return $resultado;
     }
 
-    $mtime = @filemtime(WINDOWS_JSON);
+    $mtime = @filemtime($caminhoWindows);
     if ($mtime !== false) {
         $resultado['segundos_atras'] = max(0, time() - $mtime);
         $resultado['timestamp'] = $mtime;
@@ -302,6 +338,29 @@ function coletarArmazenamentoWindows(): array
             $resultado['status_texto'] = 'Offline (Dados em cache)';
             $resultado['status_classe'] = 'critico';
         }
+    }
+
+    $rec = $json['recursos'] ?? [];
+    if (!empty($rec)) {
+        $resultado['ip'] = $rec['ip'] ?? WINDOWS_IP;
+        $saudeRec = (string)($rec['saude_disco'] ?? '100% Saudável (Running)');
+        if (strpos($saudeRec, 'Saud') !== false || strpos($saudeRec, 'Healthy') !== false || strpos($saudeRec, 'Running') !== false) {
+            $saudeRec = '100% Saudável (Running)';
+        }
+        $resultado['recursos'] = [
+            'ip' => $resultado['ip'],
+            'uptime' => $rec['uptime'] ?? 'Ativo',
+            'mem_resumo' => $rec['mem_resumo'] ?? '—',
+            'mem_usada_gb' => $rec['mem_usada_gb'] ?? '—',
+            'mem_total_gb' => $rec['mem_total_gb'] ?? '—',
+            'saude_disco' => $saudeRec,
+            'disco_modelo' => $rec['disco_modelo'] ?? 'KINGSTON SA400S37120G',
+            'disco_capacidade_gb' => $rec['disco_capacidade_gb'] ?? '111,8 GB'
+        ];
+        $resultado['disco_fisico'] = [
+            'modelo' => $resultado['recursos']['disco_modelo'],
+            'total_gb' => $resultado['recursos']['disco_capacidade_gb']
+        ];
     }
 
     $discosRaw = $json['discos'] ?? $json['disks'] ?? $json['volumes'] ?? (isset($json[0]) ? $json : []);
@@ -333,7 +392,7 @@ function coletarArmazenamentoWindows(): array
             'livre_gb' => formatarGB($livB, 1),
             'pct' => $pct,
             'situacao' => $sit,
-            'saude_disco' => $d['saude'] ?? '100% Saudável (SMART OK)'
+            'saude_disco' => $resultado['recursos']['saude_disco']
         ];
     }
 
@@ -520,6 +579,82 @@ function enviarStandbyPS4(?string $pin = null): array
     ];
 }
 
+function processarResultadoPing(string $saida): array
+{
+    if (preg_match('/time[=<]([\d\.]+)\s*ms/i', $saida, $m)) {
+        $ms = (float)$m[1];
+        $intMs = max(1, (int)round($ms));
+        $texto = $intMs . 'ms';
+
+        if ($intMs <= 40) {
+            $classe = 'ping-verde';
+        } elseif ($intMs <= 120) {
+            $classe = 'ping-amarelo';
+        } else {
+            $classe = 'ping-vermelho';
+        }
+
+        return [
+            'online' => true,
+            'ms' => $intMs,
+            'texto' => $texto,
+            'classe' => $classe
+        ];
+    }
+
+    return [
+        'online' => false,
+        'ms' => null,
+        'texto' => 'Offline',
+        'classe' => 'ping-vermelho'
+    ];
+}
+
+function executarPingUnico(string $ip, bool $isWin): array
+{
+    $out = [];
+    $ret = 1;
+    $cmd = $isWin ? "ping -n 1 -w 500 {$ip}" : "ping -c 1 -W 0.5 {$ip}";
+    @exec($cmd, $out, $ret);
+    return processarResultadoPing(implode(' ', $out));
+}
+
+function coletarPingsRede(): array
+{
+    $isWin = (stripos(PHP_OS, 'WIN') === 0);
+
+    if ($isWin) {
+        return [
+            'linux' => executarPingUnico(LINUX_IP, true),
+            'windows' => ['online' => true, 'ms' => 1, 'texto' => '1ms', 'classe' => 'ping-verde'],
+            'ps4' => executarPingUnico(PS4_IP, true)
+        ];
+    }
+
+    $fLin = tempnam(sys_get_temp_dir(), 'plin_');
+    $fWin = tempnam(sys_get_temp_dir(), 'pwin_');
+    $fPs4 = tempnam(sys_get_temp_dir(), 'pps4_');
+
+    $cmd = 'ping -c 1 -W 0.5 127.0.0.1 > ' . escapeshellarg($fLin) . ' 2>&1 & ' .
+           'ping -c 1 -W 0.5 ' . escapeshellarg(WINDOWS_IP) . ' > ' . escapeshellarg($fWin) . ' 2>&1 & ' .
+           'ping -c 1 -W 0.5 ' . escapeshellarg(PS4_IP) . ' > ' . escapeshellarg($fPs4) . ' 2>&1 & wait';
+    @exec($cmd);
+
+    $outLin = @file_get_contents($fLin) ?: '';
+    $outWin = @file_get_contents($fWin) ?: '';
+    $outPs4 = @file_get_contents($fPs4) ?: '';
+
+    @unlink($fLin);
+    @unlink($fWin);
+    @unlink($fPs4);
+
+    return [
+        'linux' => processarResultadoPing($outLin),
+        'windows' => processarResultadoPing($outWin),
+        'ps4' => processarResultadoPing($outPs4)
+    ];
+}
+
 // =============================================================
 // ENDPOINTS DE API (JSON E AÇÕES DE CONTROLE)
 // =============================================================
@@ -537,6 +672,17 @@ if (isset($_GET['acao'])) {
         echo json_encode(enviarStandbyPS4($pin), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     }
+}
+
+if (isset($_GET['api']) && $_GET['api'] === 'pings') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    echo json_encode([
+        'sucesso' => true,
+        'timestamp' => time(),
+        'pings' => coletarPingsRede()
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
 }
 
 if (isset($_GET['api']) && $_GET['api'] === '1') {
@@ -588,14 +734,23 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
 $linux = coletarArmazenamentoLinux();
 $windows = coletarArmazenamentoWindows();
 $ps4 = coletarDadosPS4();
+$pingsIniciais = coletarPingsRede();
 
-$volumesAlerta = 0;
+// Verificação de espaço livre < 20 GB em qualquer equipamento
+$limite20GB = 20.0 * 1024 * 1024 * 1024; // 20 GB em bytes
+$alertasEspaco = [];
+
 foreach ($linux['sistemas_arquivos'] as $fs) {
-    if ($fs['pct'] >= LIMITE_NORMAL) $volumesAlerta++;
+    if ($fs['ponto'] === '/' && isset($fs['livre_bytes']) && $fs['livre_bytes'] < $limite20GB) {
+        $alertasEspaco[] = "Linux ({$fs['nome']}): apenas " . $fs['livre_gb'] . " livres (< 20 GB)";
+    }
 }
 foreach ($windows['discos'] as $wd) {
-    if ($wd['pct'] >= LIMITE_NORMAL) $volumesAlerta++;
+    if (isset($wd['livre_bytes']) && $wd['livre_bytes'] < $limite20GB) {
+        $alertasEspaco[] = "Windows ({$wd['unidade']}): apenas " . $wd['livre_gb'] . " livres (< 20 GB)";
+    }
 }
+$temAlerta20GB = !empty($alertasEspaco);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -625,17 +780,21 @@ foreach ($windows['discos'] as $wd) {
             --ps-blue: #0070D1;
         }
 
-        .ccm-11,
-        .ccm-11 *,
-        .ccm-11 *::before,
-        .ccm-11 *::after {
+        *,
+        *::before,
+        *::after {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
 
         body {
-            background-color: var(--bg-principal);
+            background-color: #000000;
+            background-image: url('fundo_painel.jpg');
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: cover;
+            background-attachment: fixed;
             color: var(--ink);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: 13px;
@@ -654,7 +813,7 @@ foreach ($windows['discos'] as $wd) {
             right: 0;
             min-height: 52px;
             height: auto;
-            background: rgba(17, 23, 20, 0.96);
+            background: rgba(10, 14, 12, 0.94);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--borda);
@@ -746,30 +905,56 @@ foreach ($windows['discos'] as $wd) {
             font-weight: 600;
             padding: 4px 10px;
             border-radius: 999px;
-            border: 1px solid;
+            border: 1px solid transparent;
             display: inline-flex;
             align-items: center;
             gap: 6px;
             white-space: nowrap;
+            cursor: pointer;
+            background: transparent;
+            font-family: inherit;
+            transition: all 0.2s ease;
+            user-select: none;
+            outline: none;
         }
 
-        .status-alerta-badge .dot-status {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: currentColor;
+        .status-alerta-badge:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .status-alerta-badge:active {
+            transform: translateY(0);
+        }
+
+        .status-alerta-badge .badge-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            line-height: 1;
         }
 
         .status-alerta-badge.atencao {
             background: rgba(245, 158, 11, 0.12);
-            border-color: rgba(245, 158, 11, 0.3);
+            border-color: rgba(245, 158, 11, 0.35);
             color: var(--amarelo);
+        }
+
+        .status-alerta-badge.atencao:hover {
+            background: rgba(245, 158, 11, 0.2);
+            border-color: var(--amarelo);
         }
 
         .status-alerta-badge.normal {
             background: rgba(34, 197, 94, 0.12);
-            border-color: rgba(34, 197, 94, 0.3);
+            border-color: rgba(34, 197, 94, 0.35);
             color: var(--brand);
+        }
+
+        .status-alerta-badge.normal:hover {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: var(--brand);
         }
 
         .btn-sync {
@@ -805,6 +990,48 @@ foreach ($windows['discos'] as $wd) {
 
         @keyframes rodarSync { 100% { transform: rotate(360deg); } }
 
+        
+        /* BADGE DO USUÁRIO E LOGOUT */
+        .user-session-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .user-name-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: var(--ink);
+            background: var(--bg-secundario);
+            border: 1px solid var(--borda);
+            padding: 5px 10px;
+            border-radius: 8px;
+        }
+
+        .btn-logout {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: var(--ink-sec);
+            background: var(--bg-secundario);
+            border: 1px solid var(--borda);
+            padding: 5px 9px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn-logout:hover {
+            color: #FFFFFF;
+            background: rgba(239, 68, 68, 0.16);
+            border-color: rgba(239, 68, 68, 0.45);
+        }
+
         /* Notificação de Feedback ao Sincronizar */
         .sync-toast {
             position: fixed;
@@ -818,12 +1045,12 @@ foreach ($windows['discos'] as $wd) {
             border-radius: 8px;
             font-size: 12px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.85);
-            z-index: 999;
+            z-index: 9999;
             animation: toastPop 0.3s ease;
             display: flex;
             align-items: center;
             gap: 8px;
-            pointer-events: none;
+            pointer-events: auto;
         }
 
         @keyframes toastPop {
@@ -832,56 +1059,606 @@ foreach ($windows['discos'] as $wd) {
         }
 
         /* =============================================================
-           ESTRUTURA WHEEL 360 GRAUS (CCM-11)
+           NOVA ESTRUTURA: SIDEBAR FLUTUANTE À ESQUERDA + PALCO CENTRAL
            ============================================================= */
-        .ccm-11 {
+        .painel-main-layout {
             width: 100%;
-            min-height: 100vh;
-            padding-top: 48px;
+            min-height: calc(100vh - 52px);
+            padding: 30px 48px;
             display: flex;
             align-items: center;
-            justify-content: center;
-            background: radial-gradient(circle at 50% 40%, #141D17, #080B0A 75%);
-            font-family: 'Inter', system-ui, sans-serif;
-            color: var(--ink);
+            justify-content: space-between;
+            gap: 40px;
+            background: transparent;
             position: relative;
-            overflow: hidden;
-        }
-
-        .ccm-11__stage {
-            width: 100%;
-            max-width: 1360px;
-            min-height: calc(100vh - 48px);
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-            transition: all 0.5s cubic-bezier(.3,1,.35,1);
-        }
-
-        .ccm-11__machine-wrapper {
-            position: relative;
-            display: grid;
-            place-items: center;
-            flex-shrink: 0;
+            box-sizing: border-box;
+            max-width: 1560px;
             margin: 0 auto;
         }
 
-        .ccm-11__pointer {
+        /* BARRA TOGGLE DE HIDEBAR NO MOBILE */
+        .mobile-hidebar-bar {
+            display: none;
+            width: 100%;
+            margin-bottom: 12px;
+        }
+
+        .btn-hidebar-toggle {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 11px 16px;
+            background: rgba(17, 23, 20, 0.95);
+            border: 1px solid var(--borda);
+            border-radius: 12px;
+            color: var(--ink);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .btn-hidebar-toggle:hover {
+            border-color: var(--brand);
+            background: var(--bg-secundario);
+        }
+
+        .btn-hidebar-toggle .pulse-net-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--brand);
+            box-shadow: 0 0 10px var(--brand);
+            display: inline-block;
+        }
+
+        .btn-hidebar-toggle .hidebar-toggle-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-hidebar-toggle .arrow-icon {
+            transition: transform 0.3s ease;
+            color: var(--ink-sec);
+        }
+
+        .btn-hidebar-toggle[aria-expanded="true"] .arrow-icon {
+            transform: rotate(180deg);
+        }
+
+        /* SIDEBAR FLUTUANTE À ESQUERDA (SEM LINHAS EXTERNAS / SEM BORDAS DE QUADRO) */
+        .network-sidebar {
+            width: 268px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: transparent;
+            border: none;
+            padding: 0;
+            z-index: 20;
+            user-select: none;
+        }
+
+        /* HEADER ESPECIFICANDO CONTROLE PELA REDE */
+        .sidebar-net-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 4px 8px 10px 8px;
+            border-bottom: 1px solid rgba(38, 53, 43, 0.5);
+            margin-bottom: 2px;
+            transition: border-color 0.25s ease;
+        }
+
+        .net-radar-pulse {
+            position: relative;
+            width: 16px;
+            height: 16px;
+            display: grid;
+            place-items: center;
+        }
+
+        /* LUZ DO RADAR EM 'SISTEMAS E HOSTS': PERMANECE VERDE COM PULSO */
+        .net-radar-pulse .radar-ping {
+            display: block;
             position: absolute;
-            left: 50%;
-            top: calc(50% - 206px);
-            translate: -50% 0;
-            width: 0;
-            height: 0;
-            border-left: 7px solid transparent;
-            border-right: 7px solid transparent;
-            border-top: 10px solid var(--brand);
-            border-bottom: 0;
-            filter: drop-shadow(0 2px 6px rgba(34, 197, 94, 0.8));
-            z-index: 10;
-            pointer-events: none;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: var(--brand);
+            opacity: 0.7;
+            animation: radarPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        .net-radar-pulse .radar-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--brand);
+            box-shadow: 0 0 10px var(--brand);
+            z-index: 1;
+            transition: background 0.25s, box-shadow 0.25s;
+        }
+
+        .net-header-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .net-badge-title {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            color: var(--ink-sec);
+            text-transform: uppercase;
+            transition: color 0.25s ease;
+        }
+
+        .net-badge-sub {
+            font-size: 10px;
+            color: var(--ink-muted);
+        }
+
+        /* ESTADOS DE FOCO / SELEÇÃO */
+        .net-radar-pulse.is-online .radar-dot {
+            background: var(--brand);
+            box-shadow: 0 0 10px var(--brand);
+        }
+        .net-radar-pulse.is-online .radar-ping {
+            display: block;
+            background: var(--brand);
+            opacity: 0.7;
+            animation: radarPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        .sidebar-net-header.is-online .net-badge-title {
+            color: var(--brand);
+        }
+
+        .net-radar-pulse.is-offline .radar-dot {
+            background: var(--vermelho);
+            box-shadow: 0 0 10px var(--vermelho);
+        }
+        .net-radar-pulse.is-offline .radar-ping {
+            display: block;
+            background: var(--vermelho);
+            opacity: 0.7;
+            animation: radarPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        .sidebar-net-header.is-offline .net-badge-title {
+            color: var(--vermelho);
+        }
+
+        @keyframes radarPulse {
+            0% { transform: scale(0.8); opacity: 0.8; }
+            70%, 100% { transform: scale(2.4); opacity: 0; }
+        }
+
+        /* PILHA DE BOTÕES REORDENÁVEIS (DEVICES STACK) */
+        .devices-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            position: relative;
+        }
+
+        .device-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: rgba(17, 23, 20, 0.85);
+            border: 1px solid var(--borda);
+            border-radius: 10px;
+            color: var(--ink-sec);
+            cursor: pointer;
+            text-align: left;
+            font-family: 'Inter', system-ui, sans-serif;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: background 0.25s, border-color 0.25s, color 0.25s, box-shadow 0.25s, transform 0.25s;
+            user-select: none;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .device-btn:hover {
+            background: var(--bg-secundario);
+            border-color: rgba(34, 197, 94, 0.35);
+            color: var(--ink);
+            transform: translateX(3px);
+        }
+
+        .device-btn.is-active {
+            color: #FFFFFF;
+            transform: translateX(4px);
+        }
+
+        /* LUZ INDICADORA NO BOTÃO: SEMPRE CINZA SE NÃO ESTIVER CLICADO */
+        .device-btn .btn-dev-indicator {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #64748B !important;
+            box-shadow: none !important;
+            transition: background 0.25s, box-shadow 0.25s;
+            flex-shrink: 0;
+        }
+
+        .device-btn:not(.is-active) .btn-dev-indicator {
+            background: #64748B !important;
+            box-shadow: none !important;
+        }
+
+        /* SOMENTE O BOTÃO CLICADO (.is-active) ACENDE */
+        .device-btn.is-active.host-online .btn-dev-indicator {
+            background: var(--brand) !important;
+            box-shadow: 0 0 10px var(--brand) !important;
+        }
+
+        .device-btn.is-active.host-online {
+            background: rgba(34, 197, 94, 0.12);
+            border-color: var(--brand);
+            box-shadow: 0 0 18px -3px rgba(34, 197, 94, 0.45);
+        }
+
+        .device-btn.is-active.host-offline .btn-dev-indicator {
+            background: var(--vermelho) !important;
+            box-shadow: 0 0 10px var(--vermelho) !important;
+        }
+
+        .device-btn.is-active.host-offline {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: var(--vermelho);
+            box-shadow: 0 0 18px -3px rgba(239, 68, 68, 0.45);
+        }
+
+        .device-btn .btn-os-icon {
+            width: 20px;
+            height: 20px;
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+        }
+
+        .device-btn .btn-os-icon svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .device-btn .btn-dev-info {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .device-btn .btn-dev-label {
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--ink);
+            line-height: 1.2;
+            display: inline-flex;
+            align-items: baseline;
+            gap: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .device-btn .btn-dev-sub {
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--ink-muted);
+        }
+
+        .device-btn.is-active .btn-dev-sub {
+            color: rgba(236, 253, 245, 0.85);
+        }
+
+        /* CONTABILIZADOR DE PING EM 'SISTEMAS E HOSTS' (SOMENTE TEXTO, SEM CARD/BORDA) */
+        .btn-ping-badge {
+            display: inline-flex;
+            align-items: center;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 8.5px;
+            font-weight: 600;
+            line-height: 1;
+            letter-spacing: -0.2px;
+            white-space: nowrap;
+            margin-left: auto;
+            margin-right: 6px;
+            flex-shrink: 0;
+            transition: color 0.3s ease;
+        }
+
+        .btn-ping-badge.ping-verde {
+            color: #22C55E;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        .btn-ping-badge.ping-amarelo {
+            color: #F59E0B;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        .btn-ping-badge.ping-vermelho {
+            color: #EF4444;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        /* =============================================================
+           PLAYER DE MÚSICA LIQUID GLASS — BH FM (COMPACTO / MINI WIDGET)
+           ============================================================= */
+        .liquid-radio-player {
+            position: fixed;
+            bottom: 20px;
+            left: 48px;
+            z-index: 95;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px 4px 5px;
+            background: rgba(14, 20, 17, 0.72);
+            backdrop-filter: blur(16px) saturate(190%);
+            -webkit-backdrop-filter: blur(16px) saturate(190%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 30px;
+            box-shadow: 
+                0 10px 24px -4px rgba(0, 0, 0, 0.65),
+                0 0 0 1px rgba(34, 197, 94, 0.12),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.18),
+                inset 0 -1px 1px 0 rgba(0, 0, 0, 0.4);
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            user-select: none;
+            height: 32px;
+            box-sizing: border-box;
+        }
+
+        .liquid-radio-player:hover {
+            background: rgba(18, 26, 22, 0.85);
+            border-color: rgba(34, 197, 94, 0.35);
+            box-shadow: 
+                0 14px 28px -4px rgba(0, 0, 0, 0.75),
+                0 0 16px -2px rgba(34, 197, 94, 0.22),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
+        }
+
+        .radio-play-btn {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #22C55E 0%, #15803D 100%);
+            border: none;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+            color: #FFFFFF;
+            box-shadow: 0 2px 8px rgba(34, 197, 94, 0.4);
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
+            flex-shrink: 0;
+            outline: none;
+            padding: 0;
+        }
+
+        .radio-play-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.6);
+        }
+
+        .radio-play-btn:active {
+            transform: scale(0.94);
+        }
+
+        .radio-play-btn svg {
+            width: 10px;
+            height: 10px;
+        }
+
+        .radio-info {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .radio-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--ink);
+            letter-spacing: 0.2px;
+            line-height: 1;
+        }
+
+        .radio-live-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 7.5px;
+            font-weight: 700;
+            padding: 1.5px 4.5px;
+            border-radius: 3px;
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.25);
+            color: var(--brand);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            line-height: 1;
+        }
+
+        .radio-live-dot {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--brand);
+            box-shadow: 0 0 4px var(--brand);
+        }
+
+        .liquid-radio-player.is-playing .radio-live-dot {
+            animation: radioPulseLive 1.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes radioPulseLive {
+            0% { transform: scale(0.85); opacity: 0.6; }
+            100% { transform: scale(1.25); opacity: 1; box-shadow: 0 0 6px var(--brand); }
+        }
+
+        /* EQUALIZADOR ANIMADO MICRO */
+        .radio-equalizer {
+            display: flex;
+            align-items: flex-end;
+            gap: 1.5px;
+            height: 12px;
+            width: 12px;
+            padding: 0 1px;
+            flex-shrink: 0;
+        }
+
+        .radio-eq-bar {
+            width: 2px;
+            height: 2px;
+            background: var(--brand);
+            border-radius: 1px;
+            transition: height 0.2s ease, opacity 0.2s ease;
+            opacity: 0.35;
+        }
+
+        .liquid-radio-player.is-playing .radio-eq-bar:nth-child(1) {
+            animation: eqDanceMini 0.75s ease-in-out infinite alternate;
+        }
+        .liquid-radio-player.is-playing .radio-eq-bar:nth-child(2) {
+            animation: eqDanceMini 1.05s ease-in-out 0.15s infinite alternate;
+        }
+        .liquid-radio-player.is-playing .radio-eq-bar:nth-child(3) {
+            animation: eqDanceMini 0.85s ease-in-out 0.3s infinite alternate;
+        }
+        .liquid-radio-player.is-playing .radio-eq-bar:nth-child(4) {
+            animation: eqDanceMini 1.15s ease-in-out 0.1s infinite alternate;
+        }
+
+        @keyframes eqDanceMini {
+            0% { height: 2px; opacity: 0.5; }
+            50% { height: 11px; opacity: 1; }
+            100% { height: 5px; opacity: 0.8; }
+        }
+
+        /* CONTROLE DE VOLUME MINI */
+        .radio-vol-box {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding-left: 6px;
+            border-left: 1px solid rgba(255, 255, 255, 0.12);
+            height: 16px;
+        }
+
+        .radio-mute-btn {
+            background: transparent;
+            border: none;
+            color: var(--ink-sec);
+            cursor: pointer;
+            padding: 2px;
+            border-radius: 4px;
+            display: grid;
+            place-items: center;
+            transition: color 0.2s, transform 0.2s;
+        }
+
+        .radio-mute-btn:hover {
+            color: var(--ink);
+            transform: scale(1.15);
+        }
+
+        .radio-mute-btn svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .radio-vol-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 42px;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .radio-vol-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--brand);
+            box-shadow: 0 0 6px var(--brand);
+            cursor: pointer;
+            transition: transform 0.15s;
+        }
+
+        .radio-vol-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+
+        .radio-vol-slider::-moz-range-thumb {
+            width: 8px;
+            height: 8px;
+            border: none;
+            border-radius: 50%;
+            background: var(--brand);
+            box-shadow: 0 0 6px var(--brand);
+            cursor: pointer;
+        }
+
+        @media (max-width: 900px) {
+            .liquid-radio-player {
+                left: 16px;
+                bottom: 16px;
+                height: 30px;
+                padding: 4px 8px 4px 4px;
+                gap: 6px;
+            }
+            .radio-vol-box {
+                display: none;
+            }
+        }
+
+        
+
+        
+        
+
+        /* PALCO CENTRAL */
+        .painel-center-stage {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            position: relative;
+            min-height: 520px;
+            padding: 0;
+            box-sizing: border-box;
         }
 
         .card-timeout-bar {
@@ -907,217 +1684,31 @@ foreach ($windows['discos'] as $wd) {
             to { transform: scaleX(0); }
         }
 
-        .ccm-11__machine {
-            position: relative;
-            width: 340px;
-            height: 340px;
-            display: grid;
-            place-items: center;
-        }
-
-        .ccm-11__wheel {
-            position: absolute;
-            inset: 0;
-            list-style: none;
-            border-radius: 50%;
-            border: 1px solid var(--borda);
-            box-shadow: 0 0 40px rgba(0, 0, 0, 0.6), inset 0 0 25px rgba(0, 0, 0, 0.5);
-            rotate: var(--rot,0deg);
-            transition: rotate .7s cubic-bezier(.3,1,.35,1);
-        }
-
-        .ccm-11__wheel li {
-            position: absolute;
-            inset: 0;
-            display: grid;
-            place-items: center;
-            pointer-events: none;
-            --a: calc((360deg / var(--n)) * var(--i) - 90deg);
-            translate: calc(cos(var(--a)) * 170px) calc(sin(var(--a)) * 170px);
-        }
-
-        .ccm-11__stop {
-            pointer-events: auto;
-            border: 1px solid var(--borda);
-            border-radius: 999px;
-            padding: 8px 18px;
-            background: rgba(17, 23, 20, 0.95);
-            color: var(--ink-sec);
-            font: 600 13px/1 'Inter', system-ui, sans-serif;
-            letter-spacing: .02em;
-            cursor: pointer;
-            white-space: nowrap;
-            rotate: calc(var(--rot,0deg) * -1);
-            transition: rotate .7s cubic-bezier(.3,1,.35,1), background .25s, color .25s, border-color .25s, scale .25s, box-shadow .25s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            user-select: none;
-        }
-
-        .ccm-11__stop:hover {
-            border-color: var(--brand);
-            color: #fff;
-            background: var(--bg-destaque);
-        }
-
-        .ccm-11__stop.is-active {
-            background: var(--brand);
-            border-color: var(--brand);
-            color: #080B0A;
-            font-weight: 700;
-            scale: 1.12;
-            box-shadow: 0 0 24px -2px rgba(34, 197, 94, 0.7);
-        }
-
-        .ccm-11__stop.is-open {
-            outline: 2px solid #FFFFFF;
-            outline-offset: 2px;
-            box-shadow: 0 0 30px rgba(34, 197, 94, 0.9);
-        }
-
-        .ccm-11__stop .btn-os-icon {
-            width: 16px;
-            height: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        .ccm-11__stop .btn-os-icon svg {
-            width: 16px;
-            height: 16px;
-        }
-
-        .ccm-11__stop.is-active .btn-os-icon svg {
-            fill: #080B0A;
-        }
-
-        .ccm-11__face {
-            position: relative;
-            z-index: 2;
-            display: grid;
-            justify-items: center;
-            gap: 3px;
-            width: 190px;
-            height: 190px;
-            border-radius: 50%;
-            place-content: center;
-            text-align: center;
-            background: radial-gradient(circle at 38% 30%, #171F1A, #111714);
-            border: 1px solid var(--borda);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 20px 50px -20px rgba(0, 0, 0, 0.9);
-            cursor: pointer;
-            user-select: none;
-            transition: border-color 0.25s, box-shadow 0.25s;
-        }
-
-        .ccm-11__face:hover {
-            border-color: var(--brand);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 0 25px rgba(34, 197, 94, 0.25);
-        }
-
-        .ccm-11__face em {
-            font-style: normal;
-            font-size: 9px;
-            letter-spacing: .22em;
-            text-transform: uppercase;
-            color: var(--ink-sec);
-        }
-
-        .ccm-11__face-icon {
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-top: 2px;
-        }
-
-        .ccm-11__face-icon svg {
-            width: 28px;
-            height: 28px;
-        }
-
-        .ccm-11__current {
-            font-size: 17px;
-            font-weight: 700;
-            letter-spacing: -.01em;
-            color: var(--ink);
-            line-height: 1.15;
-            white-space: nowrap;
-        }
-
-        .ccm-11__face .hint-clique {
-            font-size: 10px;
-            font-weight: 600;
-            color: var(--brand);
-            margin-top: 1px;
-        }
-
-        .ccm-11__steer {
-            display: flex;
-            gap: 10px;
-            margin-top: 6px;
-        }
-
-        .ccm-11__steer button {
-            width: 34px;
-            height: 34px;
-            border-radius: 50%;
-            border: 1px solid var(--borda);
-            background: var(--bg-secundario);
-            color: var(--ink);
-            font-size: 13px;
-            cursor: pointer;
-            display: grid;
-            place-items: center;
-            transition: background .2s, border-color .2s, color .2s;
-        }
-
-        .ccm-11__steer button:hover {
-            background: var(--brand);
-            border-color: var(--brand);
-            color: #080B0A;
-        }
-
-        .ccm-11__live {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            clip-path: inset(50%);
-            overflow: hidden;
-            white-space: nowrap;
-        }
-
         /* =============================================================
-           CARD COMPACTO E ENXUTO DE DADOS
+           CARD COMPACTO E ENXUTO DE DADOS (CENTRALIZADO NO PALCO)
            ============================================================= */
         .compact-card {
             display: none;
             flex-direction: column;
-            gap: 10px;
-            width: 410px;
-            max-width: calc(100vw - 32px);
-            max-height: calc(100vh - 72px);
+            gap: 5px;
+            width: 310px;
+            max-width: 100%;
+            max-height: calc(100vh - 84px);
             overflow-y: auto;
-            position: absolute;
-            right: 28px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(17, 23, 20, 0.96);
+            position: relative;
+            background: rgba(10, 14, 12, 0.94);
             border: 1px solid var(--borda);
-            border-radius: 14px;
-            padding: 15px 17px;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 1px rgba(34, 197, 94, 0.4);
+            border-radius: 11px;
+            padding: 10px 12px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9), 0 0 1px rgba(34, 197, 94, 0.3);
             backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             transition: border-color 0.3s;
             z-index: 10;
         }
 
         .compact-card::-webkit-scrollbar {
-            width: 4px;
+            width: 3px;
         }
 
         .compact-card::-webkit-scrollbar-track {
@@ -1137,11 +1728,11 @@ foreach ($windows['discos'] as $wd) {
         @keyframes cardSlideInRight {
             from {
                 opacity: 0;
-                transform: translateY(-50%) translateX(28px) scale(0.97);
+                transform: translateX(36px) scale(0.97);
             }
             to {
                 opacity: 1;
-                transform: translateY(-50%) translateX(0) scale(1);
+                transform: translateX(0) scale(1);
             }
         }
 
@@ -1149,24 +1740,29 @@ foreach ($windows['discos'] as $wd) {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding-bottom: 8px;
+            padding-bottom: 5px;
             border-bottom: 1px solid var(--borda);
         }
 
         .card-brand {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 7px;
         }
 
         .brand-icon-box {
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
             display: grid;
             place-items: center;
             background: var(--bg-secundario);
             border: 1px solid var(--borda);
+        }
+
+        .brand-icon-box svg {
+            width: 14px;
+            height: 14px;
         }
 
         .brand-icon-box.linux-brand {
@@ -1185,30 +1781,30 @@ foreach ($windows['discos'] as $wd) {
         }
 
         .card-brand h3 {
-            font-size: 15px;
+            font-size: 12.5px;
             font-weight: 700;
             color: var(--ink);
             line-height: 1.1;
         }
 
         .card-brand .card-sub {
-            font-size: 11px;
+            font-size: 9px;
             color: var(--ink-muted);
         }
 
         .card-top-right {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 5px;
         }
 
         .pill-status {
             display: inline-flex;
             align-items: center;
-            gap: 5px;
-            font-size: 11px;
+            gap: 4px;
+            font-size: 9.5px;
             font-weight: 600;
-            padding: 3px 8px;
+            padding: 2px 6px;
             border-radius: 999px;
             border: 1px solid;
         }
@@ -1242,12 +1838,12 @@ foreach ($windows['discos'] as $wd) {
             background: var(--bg-secundario);
             color: var(--ink-sec);
             border: 1px solid var(--borda);
-            width: 26px;
-            height: 26px;
-            border-radius: 6px;
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
             display: grid;
             place-items: center;
-            font-size: 11px;
+            font-size: 10px;
             cursor: pointer;
             transition: all 0.2s;
         }
@@ -1262,28 +1858,28 @@ foreach ($windows['discos'] as $wd) {
         .quick-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 6px;
+            gap: 4px;
         }
 
         .quick-metric {
             background: var(--bg-secundario);
             border: 1px solid var(--borda);
-            border-radius: 8px;
-            padding: 7px 10px;
+            border-radius: 5px;
+            padding: 4px 7px;
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 1px;
         }
 
         .quick-metric .q-label {
-            font-size: 9.5px;
+            font-size: 8px;
             color: var(--ink-muted);
             text-transform: uppercase;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.2px;
         }
 
         .quick-metric .q-val {
-            font-size: 12px;
+            font-size: 10.5px;
             font-weight: 700;
             color: var(--ink);
         }
@@ -1294,11 +1890,11 @@ foreach ($windows['discos'] as $wd) {
         .main-storage-box {
             background: var(--bg-secundario);
             border: 1px solid var(--borda);
-            border-radius: 10px;
-            padding: 10px 12px;
+            border-radius: 6px;
+            padding: 5px 8px;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 3px;
         }
 
         .storage-head {
@@ -1308,12 +1904,12 @@ foreach ($windows['discos'] as $wd) {
         }
 
         .storage-title {
-            font-size: 12px;
+            font-size: 10px;
             color: var(--ink);
         }
 
         .storage-pct {
-            font-size: 12px;
+            font-size: 10.5px;
             font-weight: 700;
         }
 
@@ -1325,20 +1921,20 @@ foreach ($windows['discos'] as $wd) {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             background: rgba(0, 0, 0, 0.3);
-            padding: 5px 8px;
-            border-radius: 6px;
-            gap: 6px;
+            padding: 4px 6px;
+            border-radius: 5px;
+            gap: 4px;
         }
 
         .storage-stats .s-lbl {
-            font-size: 9px;
+            font-size: 8px;
             color: var(--ink-muted);
             text-transform: uppercase;
             display: block;
         }
 
         .storage-stats .s-num {
-            font-size: 12px;
+            font-size: 10.5px;
             font-weight: 700;
             color: var(--ink);
         }
@@ -1349,7 +1945,7 @@ foreach ($windows['discos'] as $wd) {
 
         .storage-bar {
             width: 100%;
-            height: 6px;
+            height: 3px;
             background: #090E0B;
             border-radius: 9999px;
             overflow: hidden;
@@ -1369,23 +1965,23 @@ foreach ($windows['discos'] as $wd) {
         .infografico-mini {
             background: var(--bg-secundario);
             border: 1px solid var(--borda);
-            border-radius: 8px;
-            padding: 8px 10px;
+            border-radius: 6px;
+            padding: 6px 8px;
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 4px;
         }
 
         .info-mini-head {
             display: flex;
             justify-content: space-between;
-            font-size: 10px;
+            font-size: 9.5px;
             color: var(--ink-sec);
         }
 
         .barra-seg-mini {
             display: flex;
-            height: 7px;
+            height: 6px;
             border-radius: 999px;
             overflow: hidden;
             background: #090E0B;
@@ -1400,20 +1996,20 @@ foreach ($windows['discos'] as $wd) {
         .infografico-mini-leg {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
-            font-size: 9.5px;
+            gap: 6px;
+            font-size: 8.5px;
             color: var(--ink-sec);
         }
 
         .leg-mini-item {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 3px;
         }
 
         .leg-mini-item .ponto {
-            width: 6px;
-            height: 6px;
+            width: 5px;
+            height: 5px;
             border-radius: 50%;
         }
 
@@ -1482,42 +2078,12 @@ foreach ($windows['discos'] as $wd) {
         }
 
         @media (max-width: 1080px) {
-            .ccm-11 {
-                padding-top: 64px;
-                min-height: 100vh;
-                height: auto;
-                overflow-y: auto;
-                align-items: flex-start;
-            }
-            .ccm-11__stage {
-                flex-direction: column;
-                justify-content: flex-start;
-                padding-top: 24px;
-                padding-bottom: 50px;
-                min-height: auto;
+            .painel-main-layout {
+                padding: 24px 24px;
+                gap: 28px;
             }
             .compact-card {
-                position: relative;
-                right: auto;
-                top: auto;
-                transform: none;
-                margin-top: 28px;
-                width: 100%;
-                max-width: 440px;
-                max-height: none;
-            }
-            .compact-card.is-visible {
-                animation: fadeScaleIn 0.3s ease forwards;
-            }
-            @keyframes fadeScaleIn {
-                from {
-                    opacity: 0;
-                    transform: translateY(12px) scale(0.98);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0) scale(1);
-                }
+                max-width: 100%;
             }
         }
 
@@ -1547,10 +2113,41 @@ foreach ($windows['discos'] as $wd) {
                 word-break: break-word;
                 max-width: 100%;
             }
-            .ccm-11 {
-                padding-top: 24px;
+            .painel-main-layout {
+                flex-direction: column;
+                align-items: stretch;
+                padding: 14px 12px 40px 12px;
+                gap: 0;
+            }
+            .mobile-hidebar-bar {
+                display: block;
+            }
+            /* SIDEBAR VIRA HIDEBAR NO MOBILE */
+            .network-sidebar {
+                width: 100%;
+                max-height: 0;
+                opacity: 0;
+                overflow: hidden;
+                pointer-events: none;
+                transform: translateY(-8px);
+                transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease, transform 0.25s ease, margin 0.3s ease;
+                margin-bottom: 0;
+            }
+            .network-sidebar.hidebar-open {
+                max-height: 500px;
+                opacity: 1;
+                pointer-events: auto;
+                transform: translateY(0);
+                margin-bottom: 16px;
+            }
+            .painel-center-stage {
+                width: 100%;
+                min-height: auto;
+                padding: 0;
             }
             .compact-card {
+                width: 100%;
+                max-width: 100%;
                 padding: 13px 14px;
                 border-radius: 12px;
             }
@@ -1625,10 +2222,22 @@ foreach ($windows['discos'] as $wd) {
                 <span class="tempo-texto">Última atualização: <span id="hora-coleta-topo" class="mono"><?= date('H:i:s') ?></span> (<strong id="timer-painel-topo" class="mono">há 0s</strong>)</span>
             </div>
 
-            <div class="status-alerta-badge <?= $volumesAlerta > 0 ? 'atencao' : 'normal' ?>" id="header-alerta-badge">
-                <span class="dot-status"></span>
-                <span id="header-alerta-texto"><?= $volumesAlerta > 0 ? "Atenção ({$volumesAlerta} volume)" : "Infraestrutura OK" ?></span>
-            </div>
+            <button type="button" class="status-alerta-badge <?= $temAlerta20GB ? 'atencao' : 'normal' ?>" id="header-alerta-badge" onclick="verificarNotificacaoEspaco()" title="Clique para verificar notificações de armazenamento">
+                <span class="badge-icon" id="header-alerta-icone">
+                    <?php if ($temAlerta20GB): ?>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    <?php else: ?>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    <?php endif; ?>
+                </span>
+                <span id="header-alerta-texto"><?= $temAlerta20GB ? 'Atenção' : 'Normal' ?></span>
+            </button>
 
             <button id="btn-sync-top" class="btn-sync" onclick="sincronizarManual()" title="Atualizar dados de todas as fontes agora">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1636,6 +2245,25 @@ foreach ($windows['discos'] as $wd) {
                 </svg>
                 <span id="btn-sync-text">Atualizar dados</span>
             </button>
+
+            <!-- BADGE DO OPERADOR AUTENTICADO E BOTÃO LOGOUT -->
+            <div class="user-session-badge" title="Usuário conectado">
+                <span class="user-name-tag">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand);">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span><?= htmlspecialchars($usuarioLogado) ?></span>
+                </span>
+                <a href="logout.php" class="btn-logout" title="Encerrar sessão">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                    <span>Sair</span>
+                </a>
+            </div>
         </div>
     </header>
 
@@ -1643,70 +2271,92 @@ foreach ($windows['discos'] as $wd) {
     <div id="sync-toast" class="sync-toast" style="display:none"></div>
 
     <!-- =============================================================
-         2. PALCO DA RODA CIRCULAR 360 GRAUS (CCM-11) + CARD COMPACTO
+         2. LAYOUT PRINCIPAL: SIDEBAR ESQUERDA (REDE) + PALCO CENTRAL
          ============================================================= -->
-    <main class="ccm-11" aria-label="Navegação em roda 360 graus">
-        <div class="ccm-11__stage" id="ccm-stage">
+    <main class="painel-main-layout" id="painel-main-layout">
 
-            <!-- ENVOLTÓRIO DA MÁQUINA CIRCULAR -->
-            <div class="ccm-11__machine-wrapper">
-                <div class="ccm-11__pointer" aria-hidden="true"></div>
+        <!-- TOGGLE DA HIDEBAR NO CELULAR -->
+        <div class="mobile-hidebar-bar">
+            <button type="button" class="btn-hidebar-toggle" id="btn-hidebar-toggle" onclick="toggleMobileHidebar()" aria-expanded="false" title="Mostrar/ocultar menu de dispositivos">
+                <div class="hidebar-toggle-left">
+                    <span class="pulse-net-dot"></span>
+                    <span class="hidebar-toggle-title">Sistemas e Hosts</span>
+                </div>
+                <div class="hidebar-toggle-right" style="display: flex; align-items: center; gap: 8px;">
+                    <span id="hidebar-active-label" style="color: var(--brand); font-weight: 700;">LINUX</span>
+                    <svg class="arrow-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+            </button>
+        </div>
 
-                <!-- NOTA: --n:3 PARA LINUX, WINDOWS E PS4 (EXPANSÍVEL) -->
-                <nav class="ccm-11__machine" style="--n:3" aria-label="Dispositivos">
-                    <ul class="ccm-11__wheel">
-                        <li style="--i:0">
-                            <button type="button" class="ccm-11__stop is-active" data-section="linux" aria-pressed="true">
-                                <span class="btn-os-icon">
-                                    <svg viewBox="0 0 24 24" fill="#FCC624">
-                                        <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/>
-                                    </svg>
-                                </span>
-                                <span>Linux</span>
-                            </button>
-                        </li>
-                        <li style="--i:1">
-                            <button type="button" class="ccm-11__stop" data-section="windows" aria-pressed="false">
-                                <span class="btn-os-icon">
-                                    <svg viewBox="0 0 24 24" fill="#38BDF8">
-                                        <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.902-1.799"/>
-                                    </svg>
-                                </span>
-                                <span>Windows</span>
-                            </button>
-                        </li>
-                        <li style="--i:2">
-                            <button type="button" class="ccm-11__stop" data-section="ps4" aria-pressed="false">
-                                <span class="btn-os-icon">
-                                    <svg viewBox="0 0 24 24" fill="#0070D1">
-                                        <path d="M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241l6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z"/>
-                                    </svg>
-                                </span>
-                                <span>PS4</span>
-                            </button>
-                        </li>
-                    </ul>
-
-                    <!-- CENTRO DA RODA INTERATIVO -->
-                    <div class="ccm-11__face" id="ccm-face" title="Clique para abrir ou fechar os dados">
-                        <em>MONITORAMENTO</em>
-                        <div class="ccm-11__face-icon" id="face-icon">
-                            <svg viewBox="0 0 24 24" fill="var(--brand)" width="28" height="28">
-                                <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
-                            </svg>
-                        </div>
-                        <strong class="ccm-11__current">Servidor Casa</strong>
-                        <span class="hint-clique" id="face-hint">Clique para abrir</span>
-
-                        <div class="ccm-11__steer">
-                            <button type="button" class="ccm-11__prev" aria-label="Seção anterior">←</button>
-                            <button type="button" class="ccm-11__next" aria-label="Próxima seção">→</button>
-                        </div>
-                    </div>
-
-                    <p class="ccm-11__live" aria-live="polite">Linux selecionado</p>
-                </nav>
+        <!-- SIDEBAR FLUTUANTE À ESQUERDA (SEM LINHAS EXTERNAS) -->
+        <aside class="network-sidebar" id="network-sidebar" aria-label="Sistemas e Hosts Conectados">
+            <div class="sidebar-net-header" id="sidebar-net-header">
+                <div class="net-radar-pulse is-online" id="net-radar-pulse">
+                    <span class="radar-ping"></span>
+                    <span class="radar-dot"></span>
+                </div>
+                <div class="net-header-info">
+                    <span class="net-badge-title">Sistemas e Hosts</span>
+                    <span class="net-badge-sub">Dispositivos Conectados</span>
+                </div>
             </div>
+
+            <div class="devices-stack" id="devices-stack">
+                <!-- BOTÃO LINUX -->
+                <?php $linOn = true; ?>
+                <button type="button" class="device-btn <?= $linOn ? 'host-online' : 'host-offline' ?>" id="btn-dev-linux" data-section="linux" data-online="<?= $linOn ? '1' : '0' ?>" onclick="selectDevice('linux')" aria-pressed="false">
+                    <span class="btn-os-icon">
+                        <svg viewBox="0 0 24 24" fill="#FCC624">
+                            <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/>
+                        </svg>
+                    </span>
+                    <div class="btn-dev-info">
+                        <span class="btn-dev-label">Linux <span class="btn-dev-sub">(Notebook Servidor)</span></span>
+                    </div>
+                    <span class="btn-ping-badge <?= htmlspecialchars($pingsIniciais['linux']['classe'] ?? 'ping-verde') ?>" id="ping-badge-linux" title="Latência ICMP: <?= htmlspecialchars($pingsIniciais['linux']['texto'] ?? '1ms') ?>"><?= htmlspecialchars($pingsIniciais['linux']['texto'] ?? '1ms') ?></span>
+                    <span class="btn-dev-indicator"></span>
+                </button>
+
+                <!-- BOTÃO WINDOWS -->
+                <?php $winOn = !empty($windows['ativo_online']); ?>
+                <button type="button" class="device-btn <?= $winOn ? 'host-online' : 'host-offline' ?>" id="btn-dev-windows" data-section="windows" data-online="<?= $winOn ? '1' : '0' ?>" onclick="selectDevice('windows')" aria-pressed="false">
+                    <span class="btn-os-icon">
+                        <svg viewBox="0 0 24 24" fill="#38BDF8">
+                            <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.902-1.799"/>
+                        </svg>
+                    </span>
+                    <div class="btn-dev-info">
+                        <span class="btn-dev-label">Windows <span class="btn-dev-sub">(Notebook)</span></span>
+                    </div>
+                    <span class="btn-ping-badge <?= htmlspecialchars($pingsIniciais['windows']['classe'] ?? 'ping-verde') ?>" id="ping-badge-windows" title="Latência ICMP: <?= htmlspecialchars($pingsIniciais['windows']['texto'] ?? '2ms') ?>"><?= htmlspecialchars($pingsIniciais['windows']['texto'] ?? '2ms') ?></span>
+                    <span class="btn-dev-indicator"></span>
+                </button>
+
+                <!-- BOTÃO PS4 -->
+                <?php $ps4On = !empty($ps4['online']); ?>
+                <button type="button" class="device-btn <?= $ps4On ? 'host-online' : 'host-offline' ?>" id="btn-dev-ps4" data-section="ps4" data-online="<?= $ps4On ? '1' : '0' ?>" onclick="selectDevice('ps4')" aria-pressed="false">
+                    <span class="btn-os-icon">
+                        <svg viewBox="0 0 24 24" fill="#0070D1">
+                            <path d="M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241l6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z"/>
+                        </svg>
+                    </span>
+                    <div class="btn-dev-info">
+                        <span class="btn-dev-label">PS4 <span class="btn-dev-sub">(Console Fat)</span></span>
+                    </div>
+                    <span class="btn-ping-badge <?= htmlspecialchars($pingsIniciais['ps4']['classe'] ?? 'ping-vermelho') ?>" id="ping-badge-ps4" title="Latência ICMP: <?= htmlspecialchars($pingsIniciais['ps4']['texto'] ?? 'Offline') ?>"><?= htmlspecialchars($pingsIniciais['ps4']['texto'] ?? 'Offline') ?></span>
+                    <span class="btn-dev-indicator"></span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- PALCO CENTRAL ONDE OS CARDS SE ABREM -->
+        <section class="painel-center-stage" id="painel-center-stage">
+
+            
+
 
             <!-- =========================================================
                  3. CARD COMPACTO: LINUX (NEXUS)
@@ -1715,14 +2365,15 @@ foreach ($windows['discos'] as $wd) {
                 <div class="card-timeout-bar" aria-hidden="true"></div>
                 <div class="card-top">
                     <div class="card-brand">
-                        <div class="brand-icon-box linux-brand">
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="#FCC624">
-                                <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/>
+                        <div class="brand-icon-box linux-brand" title="Notebook Servidor Linux">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#FCC624" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+                                <line x1="2" y1="20" x2="22" y2="20"></line>
                             </svg>
                         </div>
                         <div>
-                            <h3>NEXUS</h3>
-                            <span class="card-sub">Ubuntu Server 24.04 LTS</span>
+                            <h3>Linux</h3>
+                            <span class="card-sub">Notebook Servidor • Ubuntu 24.04 LTS</span>
                         </div>
                     </div>
                     <div class="card-top-right">
@@ -1738,7 +2389,7 @@ foreach ($windows['discos'] as $wd) {
                 <div class="quick-grid">
                     <div class="quick-metric">
                         <span class="q-label">Endereço IP</span>
-                        <span class="q-val mono" style="color: var(--brand);">192.168.18.166</span>
+                        <span class="q-val mono" id="draw-linux-ip" style="color: var(--brand);"><?= htmlspecialchars($linux['ip']) ?></span>
                     </div>
                     <div class="quick-metric">
                         <span class="q-label">Tempo de Atividade</span>
@@ -1749,17 +2400,17 @@ foreach ($windows['discos'] as $wd) {
                         <span class="q-val mono" id="draw-linux-ram"><?= $linux['recursos']['mem_usada_gb'] ?> / <?= $linux['recursos']['mem_total_gb'] ?></span>
                     </div>
                     <div class="quick-metric">
-                        <span class="q-label">Saúde Disco (SDA)</span>
+                        <span class="q-label">Saúde Disco</span>
                         <span class="q-val ok" id="draw-linux-saude"><?= htmlspecialchars($linux['recursos']['saude_disco']) ?></span>
                     </div>
                 </div>
 
-                <!-- ARMAZENAMENTO PRINCIPAL (RAIZ / — LVM EXT4) -->
+                <!-- ARMAZENAMENTO PRINCIPAL (PARTIÇÃO RAIZ /) -->
                 <?php $raiz = $linux['sistemas_arquivos'][0] ?? null; ?>
                 <div class="main-storage-box">
                     <div class="storage-head">
                         <span class="storage-title">
-                            <strong>Armazenamento Raiz (/)</strong> — ubuntu-lv
+                            <strong>Armazenamento Partição (/)</strong> — <?= htmlspecialchars($raiz['label'] ?? 'ubuntu-lv') ?>
                         </span>
                         <span class="storage-pct mono <?= $raiz['saude']['classe'] ?? 'normal' ?>" id="linux-raiz-pct">
                             <?= isset($raiz['pct']) ? number_format($raiz['pct'], 1, ',', '.') : '0' ?>%
@@ -1786,48 +2437,20 @@ foreach ($windows['discos'] as $wd) {
                     </div>
                 </div>
 
-                <!-- DISCO FÍSICO, PARTIÇÕES E POOL LVM -->
-                <div class="main-storage-box">
-                    <div class="storage-head">
-                        <span class="storage-title">
-                            <strong>Disco Físico (/dev/sda)</strong> — <?= htmlspecialchars($linux['disco_fisico']['modelo']) ?>
-                        </span>
-                        <span class="storage-pct mono normal" style="font-size: 11px;">
-                            <?= $linux['disco_fisico']['total_gb'] ?>
-                        </span>
+                <!-- INFORMATIVO SOBRE A QUANTIDADE TOTAL DO DISCO (PADRÃO HARMONIZADO) -->
+                <div class="quick-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2px;">
+                    <div class="quick-metric">
+                        <span class="q-label">Disco Total (SDA)</span>
+                        <span class="q-val mono" id="draw-linux-total" style="font-size: 11px; color: var(--ink);">Disco SDA: <?= $linux['disco_fisico']['total_gb'] ?></span>
                     </div>
-                    <div class="storage-stats">
-                        <div>
-                            <span class="s-lbl">Boot (sda2)</span>
-                            <span class="s-num mono">1,9 GB</span>
-                        </div>
-                        <div>
-                            <span class="s-lbl">EFI (sda1)</span>
-                            <span class="s-num mono">1,0 GB</span>
-                        </div>
-                        <div>
-                            <span class="s-lbl">Pool LVM Livre</span>
-                            <span class="s-num mono livre"><?= $linux['lvm']['livre_gb'] ?? '212,7 GB' ?></span>
-                        </div>
-                    </div>
-
-                    <div class="barra-seg-mini" style="margin-top: 4px;">
-                        <?php foreach ($linux['infografico_alocacao'] as $f): ?>
-                            <div class="barra-seg-fatia" style="width: <?= number_format($f['pct'], 2, '.', '') ?>%; background-color: <?= $f['cor'] ?>" title="<?= htmlspecialchars($f['nome']) ?>: <?= $f['tamanho_gb'] ?>"></div>
-                        <?php endforeach; ?>
-                    </div>
-                    <div class="infografico-mini-leg" style="margin-top: 2px;">
-                        <?php foreach ($linux['infografico_alocacao'] as $f): ?>
-                            <span class="leg-mini-item">
-                                <span class="ponto" style="background-color: <?= $f['cor'] ?>"></span>
-                                <span><?= htmlspecialchars($f['nome']) ?>: <strong style="color: var(--ink)"><?= $f['tamanho_gb'] ?></strong></span>
-                            </span>
-                        <?php endforeach; ?>
+                    <div class="quick-metric">
+                        <span class="q-label">Modelo & Pool Livre</span>
+                        <span class="q-val mono ok" style="font-size: 10px;"><?= htmlspecialchars($linux['disco_fisico']['modelo']) ?> • <?= $linux['lvm']['livre_gb'] ?? '212,7 GB' ?> Livre</span>
                     </div>
                 </div>
 
-                <div style="font-size: 11px; color: var(--ink-muted); padding-top: 2px;">
-                    💡 <em>Servidor NEXUS (hostname interno: <code><?= htmlspecialchars($linux['recursos']['hostname']) ?></code>). Coleta em tempo real.</em>
+                <div style="font-size: 9px; color: var(--ink-muted); padding-top: 1px;">
+                    💡 <em>Notebook Servidor Linux (hostname: <code><?= htmlspecialchars($linux['recursos']['hostname']) ?></code>). Coleta em tempo real.</em>
                 </div>
             </div>
 
@@ -1838,14 +2461,15 @@ foreach ($windows['discos'] as $wd) {
                 <div class="card-timeout-bar" aria-hidden="true"></div>
                 <div class="card-top">
                     <div class="card-brand">
-                        <div class="brand-icon-box win-brand">
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="#38BDF8">
-                                <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.902-1.799"/>
+                        <div class="brand-icon-box win-brand" title="Notebook Estação Windows">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+                                <line x1="2" y1="20" x2="22" y2="20"></line>
                             </svg>
                         </div>
                         <div>
                             <h3>Windows</h3>
-                            <span class="card-sub">Estação de Trabalho / Servidor Local</span>
+                            <span class="card-sub">Notebook • Windows 10/11</span>
                         </div>
                     </div>
                     <div class="card-top-right">
@@ -1857,69 +2481,80 @@ foreach ($windows['discos'] as $wd) {
                     </div>
                 </div>
 
+                <!-- 4 MÉTRICAS-CHAVE EM GRID 2x2 (PADRÃO HARMONIZADO) -->
                 <div class="quick-grid">
                     <div class="quick-metric">
                         <span class="q-label">Endereço IP</span>
-                        <span class="q-val mono" style="color: var(--brand);">192.168.18.19</span>
+                        <span class="q-val mono" id="draw-win-ip" style="color: var(--brand);"><?= htmlspecialchars($windows['ip']) ?></span>
                     </div>
                     <div class="quick-metric">
-                        <span class="q-label">Último Envio</span>
-                        <span class="q-val mono" id="win-tempo-relativo" style="color: var(--brand);">
-                            <?= $windows['segundos_atras'] !== null ? "há " . (int)$windows['segundos_atras'] . "s atrás" : "Aguardando envio" ?>
-                        </span>
+                        <span class="q-label">Tempo de Atividade</span>
+                        <span class="q-val mono" id="draw-win-uptime" style="color: var(--brand);"><?= htmlspecialchars($windows['recursos']['uptime'] ?? 'Ativo') ?></span>
                     </div>
                     <div class="quick-metric">
-                        <span class="q-label">Coletor</span>
-                        <span class="q-val mono" style="color: var(--brand);">NexusWindowsCollector</span>
+                        <span class="q-label">Memória RAM</span>
+                        <span class="q-val mono" id="draw-win-ram"><?= htmlspecialchars($windows['recursos']['mem_resumo'] ?? '—') ?></span>
                     </div>
                     <div class="quick-metric">
-                        <span class="q-label">Data Sincronização</span>
-                        <span class="q-val mono" id="win-data-sinc" style="font-size: 11px;"><?= htmlspecialchars($windows['data_formatada']) ?></span>
+                        <span class="q-label">Saúde Disco</span>
+                        <span class="q-val ok" id="draw-win-saude"><?= htmlspecialchars($windows['recursos']['saude_disco'] ?? '100% Saudável (Running)') ?></span>
                     </div>
                 </div>
 
-                <div id="lista-volumes-windows" style="display: flex; flex-direction: column; gap: 8px;">
-                    <?php if (!empty($windows['discos'])): ?>
-                        <?php foreach ($windows['discos'] as $w): ?>
-                            <div class="main-storage-box">
-                                <div class="storage-head">
-                                    <span class="storage-title">
-                                        <strong>Unidade <?= htmlspecialchars($w['unidade']) ?></strong> (<?= htmlspecialchars($w['rotulo']) ?>)
-                                    </span>
-                                    <span class="storage-pct mono <?= $w['situacao']['classe'] ?>">
-                                        <?= number_format($w['pct'], 1, ',', '.') ?>%
-                                    </span>
-                                </div>
+                <!-- ARMAZENAMENTO PRINCIPAL (PARTIÇÃO C:) -->
+                <?php $winDisco = $windows['discos'][0] ?? null; ?>
+                <div id="lista-volumes-windows" style="display: flex; flex-direction: column; gap: 4px;">
+                    <?php if ($winDisco): ?>
+                        <div class="main-storage-box">
+                            <div class="storage-head">
+                                <span class="storage-title">
+                                    <strong>Armazenamento Partição (<?= htmlspecialchars($winDisco['unidade']) ?>)</strong> — <?= htmlspecialchars($winDisco['rotulo']) ?>
+                                </span>
+                                <span class="storage-pct mono <?= $winDisco['situacao']['classe'] ?>" id="win-c-pct">
+                                    <?= number_format($winDisco['pct'], 1, ',', '.') ?>%
+                                </span>
+                            </div>
 
-                                <div class="storage-stats">
-                                    <div>
-                                        <span class="s-lbl">Total</span>
-                                        <span class="s-num mono"><?= $w['total_gb'] ?></span>
-                                    </div>
-                                    <div>
-                                        <span class="s-lbl">Usado</span>
-                                        <span class="s-num mono"><?= $w['usado_gb'] ?></span>
-                                    </div>
-                                    <div>
-                                        <span class="s-lbl">Livre</span>
-                                        <span class="s-num mono livre"><?= $w['livre_gb'] ?></span>
-                                    </div>
+                            <div class="storage-stats">
+                                <div>
+                                    <span class="s-lbl">Total</span>
+                                    <span class="s-num mono" id="win-c-tot"><?= $winDisco['total_gb'] ?></span>
                                 </div>
-
-                                <div class="storage-bar">
-                                    <div class="storage-bar-fill <?= $w['situacao']['classe'] ?>" style="width: <?= number_format($w['pct'], 1, '.', '') ?>%"></div>
+                                <div>
+                                    <span class="s-lbl">Usado</span>
+                                    <span class="s-num mono" id="win-c-usa"><?= $winDisco['usado_gb'] ?></span>
+                                </div>
+                                <div>
+                                    <span class="s-lbl">Livre</span>
+                                    <span class="s-num mono livre" id="win-c-liv"><?= $winDisco['livre_gb'] ?></span>
                                 </div>
                             </div>
-                        <?php endforeach; ?>
+
+                            <div class="storage-bar">
+                                <div class="storage-bar-fill <?= $winDisco['situacao']['classe'] ?>" id="win-c-bar" style="width: <?= number_format($winDisco['pct'], 1, '.', '') ?>%"></div>
+                            </div>
+                        </div>
                     <?php else: ?>
-                        <div style="padding: 20px; text-align: center; color: var(--ink-muted); font-size: 12px; background: var(--bg-secundario); border: 1px solid var(--borda); border-radius: 8px;">
-                            Aguardando envio do script PowerShell em <code>/var/lib/monitoramento/windows.json</code>
+                        <div style="padding: 14px; text-align: center; color: var(--ink-muted); font-size: 11px; background: var(--bg-secundario); border: 1px solid var(--borda); border-radius: 6px;">
+                            Aguardando telemetria do script PowerShell do Windows
                         </div>
                     <?php endif; ?>
                 </div>
 
-                <div style="font-size: 11px; color: var(--ink-muted); padding-top: 2px;">
-                    💡 <em>Dados sincronizados automaticamente via tarefa agendada PowerShell.</em>
+                <!-- INFORMATIVO SOBRE A QUANTIDADE TOTAL DO DISCO (PADRÃO HARMONIZADO) -->
+                <div class="quick-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2px;">
+                    <div class="quick-metric">
+                        <span class="q-label">Disco Total (C:)</span>
+                        <span class="q-val mono" id="win-disco-total" style="font-size: 11px; color: var(--ink);">Disco C: <?= htmlspecialchars($windows['recursos']['disco_capacidade_gb'] ?? '111,8 GB') ?></span>
+                    </div>
+                    <div class="quick-metric">
+                        <span class="q-label">Modelo & Sincronização</span>
+                        <span class="q-val mono ok" id="win-disco-modelo" style="font-size: 10px;"><?= htmlspecialchars($windows['recursos']['disco_modelo'] ?? 'KINGSTON SA400S37120G') ?> • Sincronizado</span>
+                    </div>
+                </div>
+
+                <div style="font-size: 9px; color: var(--ink-muted); padding-top: 1px;">
+                    💡 <em>Notebook Windows conectado via rede local (192.168.18.19). Telemetria PowerShell.</em>
                 </div>
             </div>
 
@@ -1930,14 +2565,18 @@ foreach ($windows['discos'] as $wd) {
                 <div class="card-timeout-bar" aria-hidden="true"></div>
                 <div class="card-top">
                     <div class="card-brand">
-                        <div class="brand-icon-box ps4-brand">
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="#0070D1">
-                                <path d="M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241l6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z"/>
+                        <div class="brand-icon-box ps4-brand" title="Console de Videogame PS4">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#0070D1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="6" y1="12" x2="10" y2="12"></line>
+                                <line x1="8" y1="10" x2="8" y2="14"></line>
+                                <line x1="15" y1="13" x2="15.01" y2="13"></line>
+                                <line x1="18" y1="11" x2="18.01" y2="11"></line>
+                                <rect x="2" y="6" width="20" height="12" rx="6"></rect>
                             </svg>
                         </div>
                         <div>
                             <h3>PlayStation 4 Fat</h3>
-                            <span class="card-sub">Console Original • Modelo Fat</span>
+                            <span class="card-sub">Console Videogame • PS4 Fat Original</span>
                         </div>
                     </div>
                     <div class="card-top-right">
@@ -1949,11 +2588,15 @@ foreach ($windows['discos'] as $wd) {
                     </div>
                 </div>
 
-                <!-- 4 MÉTRICAS-CHAVE EM GRID 2x2 (PADRÃO HARMONIZADO) -->
+                <!-- 1. IP & ÚLTIMA VERIFICAÇÃO EM GRID 2x2 -->
                 <div class="quick-grid">
                     <div class="quick-metric">
                         <span class="q-label">Endereço IP</span>
                         <span class="q-val mono" style="color: var(--brand);"><?= htmlspecialchars($ps4['ip']) ?></span>
+                    </div>
+                    <div class="quick-metric">
+                        <span class="q-label">Última Verificação</span>
+                        <span class="q-val mono" id="ps4-ultima-verif" style="color: var(--brand);"><?= $ps4['ultima_verificacao'] ?></span>
                     </div>
                     <div class="quick-metric">
                         <span class="q-label">Latência (Ping)</span>
@@ -1963,86 +2606,81 @@ foreach ($windows['discos'] as $wd) {
                         <span class="q-label">Identificação Console</span>
                         <span class="q-val mono" id="ps4-host-val"><?= htmlspecialchars($ps4['host_name']) ?> (<?= htmlspecialchars($ps4['host_id']) ?>)</span>
                     </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Última Verificação</span>
-                        <span class="q-val mono" id="ps4-ultima-verif" style="color: var(--brand);"><?= $ps4['ultima_verificacao'] ?></span>
-                    </div>
                 </div>
 
-                <!-- BOX DE ARMAZENAMENTO (PADRÃO VISUAL IDÊNTICO AO WINDOWS) -->
+                <!-- 2. ARMAZENAMENTO DO PS4 (FAT ORIGINAL - 500 GB HDD) -->
                 <div class="main-storage-box">
                     <div class="storage-head">
                         <span class="storage-title">
-                            <strong>Armazenamento Interno (HDD 500 GB)</strong>
+                            <strong>Armazenamento Interno</strong> — HDD 500 GB
                         </span>
-                        <span class="storage-pct mono" style="font-size: 10.5px; color: var(--ink-muted);">
-                            Não disponível via rede
+                        <span class="storage-pct mono normal" style="font-size: 10px;">
+                            500 GB HDD
                         </span>
                     </div>
+
                     <div class="storage-stats">
                         <div>
                             <span class="s-lbl">Capacidade</span>
-                            <span class="s-num mono" style="color: var(--ink-muted); font-size: 11px;">Não exposta</span>
+                            <span class="s-num mono">500,0 GB</span>
                         </div>
                         <div>
-                            <span class="s-lbl">Usado</span>
-                            <span class="s-num mono" style="color: var(--ink-muted); font-size: 11px;">Não exposto</span>
+                            <span class="s-lbl">Partição Jogos</span>
+                            <span class="s-num mono">~408 GB</span>
                         </div>
                         <div>
-                            <span class="s-lbl">Livre</span>
-                            <span class="s-num mono" style="color: var(--ink-muted); font-size: 11px;">Não exposto</span>
+                            <span class="s-lbl">Formato</span>
+                            <span class="s-num mono livre">PlayStation OS</span>
                         </div>
                     </div>
-                    <div class="storage-bar" title="O sistema original do PS4 Fat não expõe capacidade de disco por protocolo de rede.">
-                        <div class="storage-bar-fill ps4-indisponivel-bar" style="width: 100%; opacity: 0.35;"></div>
-                    </div>
-                    <div style="font-size: 10px; color: var(--ink-muted); line-height: 1.2;">
-                        ℹ <em>O PS4 Fat original não expõe telemetria de disco via rede local sem jailbreak.</em>
+
+                    <div class="storage-bar">
+                        <div class="storage-bar-fill normal" style="width: 100%"></div>
                     </div>
                 </div>
 
-                <!-- ESTADO DO CONSOLE (CONFIRMADO VIA DDP) -->
-                <div class="main-storage-box">
+                <!-- 3. ESTADO OPERACIONAL DO CONSOLE -->
+                <div class="main-storage-box" style="margin-top: 4px;">
                     <div class="storage-head">
                         <span class="storage-title">
                             <strong>Estado Operacional</strong>
                         </span>
-                        <span class="storage-pct mono <?= $ps4['estado_classe'] ?>" id="ps4-estado-tag" style="font-size: 11px;">
+                        <span class="storage-pct mono <?= $ps4['estado_classe'] ?>" id="ps4-estado-tag" style="font-size: 10px;">
                             <?= $ps4['ddp_confirmado'] ? 'Confirmado via DDP' : ($ps4['online'] ? 'Detectado na Rede' : 'Inacessível') ?>
                         </span>
                     </div>
 
-                    <div style="background: rgba(0, 0, 0, 0.35); padding: 8px 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 4px;">
+                    <div style="background: rgba(0, 0, 0, 0.35); padding: 5px 8px; border-radius: 5px; display: flex; flex-direction: column; gap: 3px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 10px; color: var(--ink-muted); text-transform: uppercase;">Atividade Atual:</span>
-                            <span id="ps4-app-nome" style="font-size: 12px; font-weight: 700; color: #38BDF8;">
+                            <span style="font-size: 9px; color: var(--ink-muted); text-transform: uppercase;">Atividade Atual:</span>
+                            <span id="ps4-app-nome" style="font-size: 11px; font-weight: 700; color: #38BDF8;">
                                 <?= !empty($ps4['app_ativa']) ? htmlspecialchars($ps4['app_ativa']) : ($ps4['online'] ? 'Menu do Sistema / Em Espera' : 'Desconectado') ?>
                             </span>
                         </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-sec);">
+                        <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--ink-sec);">
                             <span>Title ID: <strong class="mono" id="ps4-app-id"><?= !empty($ps4['app_titleid']) ? htmlspecialchars($ps4['app_titleid']) : 'N/A' ?></strong></span>
                             <span>Firmware: <strong class="mono" id="ps4-sys-ver"><?= !empty($ps4['sistema_versao']) ? htmlspecialchars($ps4['sistema_versao']) : 'N/A' ?></strong></span>
                         </div>
                     </div>
                 </div>
 
-                <!-- CONTROLES DO PS4: LIGAR / COLOCAR EM REPOUSO -->
-                <div style="display: flex; flex-direction: column; gap: 8px; background: var(--bg-secundario); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--borda);">
+                <!-- 4. CONTROLES DO CONSOLE (LIGAR / REPOUSO) -->
+                <div style="display: flex; flex-direction: column; gap: 5px; background: var(--bg-secundario); padding: 6px 8px; border-radius: 6px; border: 1px solid var(--borda);">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 11px; font-weight: 600; color: var(--ink);">Controles do Console (Rede Local)</span>
-                        <span style="font-size: 10px; color: var(--ink-muted);">MAC: <code class="mono"><?= htmlspecialchars($ps4['mac']) ?></code></span>
+                        <span style="font-size: 10px; font-weight: 600; color: var(--ink);">Controles do Console (Rede Local)</span>
+                        <span style="font-size: 9px; color: var(--ink-muted);">MAC: <code class="mono"><?= htmlspecialchars($ps4['mac']) ?></code></span>
                     </div>
 
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
                         <button type="button" class="btn-ps4-action btn-ps4-wake" onclick="acionarPS4('wake')" id="btn-ps4-wake" title="Ligar o console a partir do modo de repouso (Magic Packet + DDP Wake)">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                             </svg>
                             <span id="btn-ps4-wake-text">Ligar PS4</span>
                         </button>
 
                         <button type="button" class="btn-ps4-action btn-ps4-standby" onclick="acionarPS4('standby')" id="btn-ps4-standby" title="Colocar em Modo de Repouso via protocolo Second Screen autenticado">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                             </svg>
                             <span id="btn-ps4-standby-text">Colocar em repouso</span>
@@ -2050,104 +2688,97 @@ foreach ($windows['discos'] as $wd) {
                     </div>
 
                     <!-- FEEDBACK DE STATUS DAS AÇÕES DO PS4 -->
-                    <div id="ps4-action-feedback" style="display: none; font-size: 10.5px; padding: 7px 10px; border-radius: 6px; line-height: 1.35;"></div>
+                    <div id="ps4-action-feedback" style="display: none; font-size: 9.5px; padding: 5px 8px; border-radius: 5px; line-height: 1.3;"></div>
 
                     <!-- CAMPO DE REGISTRO / PAREAMENTO DE CÓDIGO (PIN) DO PS4 -->
-                    <div id="ps4-pin-container" style="display: none; margin-top: 2px; padding: 10px; background: rgba(0, 112, 209, 0.08); border: 1px solid rgba(0, 112, 209, 0.25); border-radius: 6px;">
-                        <div style="font-size: 11px; font-weight: 600; color: #38BDF8; margin-bottom: 4px;">Pareamento de Código (PIN) do Console</div>
-                        <div style="font-size: 10px; color: var(--ink-muted); margin-bottom: 8px; line-height: 1.3;">
+                    <div id="ps4-pin-container" style="display: none; margin-top: 2px; padding: 7px; background: rgba(0, 112, 209, 0.08); border: 1px solid rgba(0, 112, 209, 0.25); border-radius: 5px;">
+                        <div style="font-size: 10px; font-weight: 600; color: #38BDF8; margin-bottom: 3px;">Pareamento de Código (PIN) do Console</div>
+                        <div style="font-size: 9px; color: var(--ink-muted); margin-bottom: 6px; line-height: 1.25;">
                             Digite o código de 8 dígitos exibido na tela da sua TV (Adicionar Dispositivo) para autorizar e colocar em repouso:
                         </div>
-                        <div style="display: flex; gap: 6px;">
-                            <input type="text" id="ps4-pin-input" placeholder="Ex: 39822790" maxlength="8" style="flex: 1; background: var(--bg-card); border: 1px solid var(--borda); color: var(--ink); border-radius: 4px; padding: 6px 8px; font-size: 12px; font-family: var(--font-mono); text-align: center; letter-spacing: 2px;">
-                            <button type="button" id="btn-ps4-pair" onclick="acionarPS4('standby', true)" style="background: #0070D1; color: #fff; border: none; border-radius: 4px; padding: 6px 12px; font-size: 11px; font-weight: 600; cursor: pointer;">Conectar</button>
+                        <div style="display: flex; gap: 5px;">
+                            <input type="text" id="ps4-pin-input" placeholder="Ex: 39822790" maxlength="8" style="flex: 1; background: var(--bg-card); border: 1px solid var(--borda); color: var(--ink); border-radius: 4px; padding: 4px 6px; font-size: 11px; font-family: var(--font-mono); text-align: center; letter-spacing: 2px;">
+                            <button type="button" id="btn-ps4-pair" onclick="acionarPS4('standby', true)" style="background: #0070D1; color: #fff; border: none; border-radius: 4px; padding: 4px 10px; font-size: 10px; font-weight: 600; cursor: pointer;">Conectar</button>
                         </div>
                     </div>
                 </div>
 
-                <div style="font-size: 11px; color: var(--ink-muted); padding-top: 2px;">
+                <div style="font-size: 9px; color: var(--ink-muted); padding-top: 1px;">
                     💡 <em>PlayStation 4 Fat original conectado na rede local (192.168.18.162).</em>
                 </div>
             </div>
-
-        </div>
+        </section>
     </main>
 
     <!-- =============================================================
-         6. JAVASCRIPT DE ROTACAO 360, ICONES E CONTROLE
+         PLAYER DE MÚSICA LIQUID GLASS — BH FM (CANTO INFERIOR ESQUERDO)
+         ============================================================= -->
+    <audio id="audio-bhfm" preload="none" src="https://24233.live.streamtheworld.com/BHFMAAC.aac" style="display:none;"></audio>
+
+    <div class="liquid-radio-player" id="liquid-radio-player" aria-label="Player de Rádio BH FM">
+        <button type="button" class="radio-play-btn" id="radio-play-btn" onclick="toggleRadio()" title="Reproduzir / Pausar Rádio BH FM">
+            <!-- Ícone Play -->
+            <svg id="radio-play-icon" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 1.5px;">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <!-- Ícone Pause -->
+            <svg id="radio-pause-icon" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+        </button>
+
+        <div class="radio-equalizer" aria-hidden="true">
+            <span class="radio-eq-bar"></span>
+            <span class="radio-eq-bar"></span>
+            <span class="radio-eq-bar"></span>
+            <span class="radio-eq-bar"></span>
+        </div>
+
+        <div class="radio-info">
+            <span class="radio-title">BH FM</span>
+            <span class="radio-live-badge">
+                <span class="radio-live-dot"></span>
+                Ao Vivo
+            </span>
+        </div>
+
+        <div class="radio-vol-box">
+            <button type="button" class="radio-mute-btn" id="radio-mute-btn" onclick="toggleRadioMute()" title="Mutar / Ativar áudio">
+                <svg id="icon-vol-high" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+                <svg id="icon-vol-muted" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none; color:var(--vermelho);">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <line x1="23" y1="9" x2="17" y2="15"></line>
+                    <line x1="17" y1="9" x2="23" y2="15"></line>
+                </svg>
+            </button>
+            <input type="range" class="radio-vol-slider" id="radio-vol-slider" min="0" max="1" step="0.05" value="0.8" oninput="setRadioVolume(this.value)" title="Volume da Rádio">
+        </div>
+    </div>
+
+    <!-- =============================================================
+         6. JAVASCRIPT: CONTROLE DE DISPOSITIVOS POR REDE & ANIMAÇÃO FLIP
          ============================================================= -->
     <script>
         (() => {
-            const machine = document.querySelector('.ccm-11__machine');
-            const wheel = machine.querySelector('.ccm-11__wheel');
-            const stops = [...machine.querySelectorAll('.ccm-11__stop')];
-            const current = machine.querySelector('.ccm-11__current');
-            const live = machine.querySelector('.ccm-11__live');
-            const face = document.getElementById('ccm-face');
-            const faceIcon = document.getElementById('face-icon');
-            const faceHint = document.getElementById('face-hint');
-            const stage = document.getElementById('ccm-stage');
+            const stack = document.getElementById('devices-stack');
             const cardLinux = document.getElementById('card-linux');
             const cardWindows = document.getElementById('card-windows');
             const cardPs4 = document.getElementById('card-ps4');
+            const hidebarToggle = document.getElementById('btn-hidebar-toggle');
+            const hidebarLabel = document.getElementById('hidebar-active-label');
+            const networkSidebar = document.getElementById('network-sidebar');
 
-            const linuxSvg = `<svg viewBox="0 0 24 24" fill="#FCC624"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/></svg>`;
-
-            const winSvg = `<svg viewBox="0 0 24 24" fill="#38BDF8"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.902-1.799"/></svg>`;
-
-            const ps4Svg = `<svg viewBox="0 0 24 24" fill="#0070D1"><path d="M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241l6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z"/></svg>`;
-
-            const n = stops.length;
-            const step = 360 / n;
-            let rot = 0;
-            let active = 0;
-            let painelAberto = null; // 'linux', 'windows', 'ps4' ou null
-
-            const setStopRot = () => stops.forEach((s) => s.style.rotate = (-rot) + 'deg');
-
-            // O centro é fixo no ícone de casa
-            const setFaceIcon = () => {};
-
-            // ROTAÇÃO DA RODA
-            const goTo = (idx, togglePainel = false) => {
-                idx = ((idx % n) + n) % n;
-                const target = -idx * step;
-                let delta = target - (((rot % 360) + 360) % 360 === 0 ? 0 : rot % 360);
-                delta = ((delta % 360) + 540) % 360 - 180;
-                rot += delta;
-                wheel.style.setProperty('--rot', rot + 'deg');
-                setStopRot();
-
-                stops.forEach((s, k) => {
-                    s.classList.toggle('is-active', k === idx);
-                    s.setAttribute('aria-pressed', String(k === idx));
-                });
-
-                active = idx;
-                const targetSecao = stops[idx].dataset.section;
-                let labelFormatada = 'Linux';
-                if (targetSecao === 'windows') labelFormatada = 'Windows';
-                if (targetSecao === 'ps4') labelFormatada = 'PS4';
-
-                // O centro permanece fixo com "Servidor Casa" e o ícone de casa
-                live.textContent = labelFormatada + ' selecionado';
-
-                if (togglePainel) {
-                    if (painelAberto === targetSecao) {
-                        fecharPaineis();
-                    } else {
-                        abrirPainel(targetSecao);
-                    }
-                } else if (painelAberto) {
-                    abrirPainel(targetSecao);
-                }
-            };
-
+            let painelAberto = null;
+            let activeDevice = null;
             let timerAutoFechar = null;
+
 
             function iniciarTimerAutoFechar() {
                 pararTimerAutoFechar();
-                // O painel fica aberto por exatamente 40 segundos e fecha automaticamente
                 timerAutoFechar = setTimeout(() => {
                     fecharPaineis();
                 }, 40000);
@@ -2160,83 +2791,184 @@ foreach ($windows['discos'] as $wd) {
                 }
             }
 
-            function abrirPainel(secao) {
-                painelAberto = secao;
-                stage.classList.add('painel-aberto');
-                faceHint.textContent = 'Clique para fechar';
+            // FLIP ANIMATION (First, Last, Invert, Play) PARA SUBIR O BOTAO INTERAGINDO
+            function animateReorder(targetBtn) {
+                if (!stack) return;
+                const allBtns = [...stack.querySelectorAll('.device-btn')];
+                if (allBtns.length <= 1 || allBtns[0] === targetBtn) return; // Ja esta no topo
 
-                stops.forEach(s => {
-                    s.classList.toggle('is-open', s.dataset.section === secao);
+                // 1. FIRST: Posicoes no viewport antes da reordenacao
+                const firstPositions = new Map();
+                allBtns.forEach(btn => {
+                    firstPositions.set(btn, btn.getBoundingClientRect().top);
                 });
 
-                cardLinux.classList.toggle('is-visible', secao === 'linux');
-                cardWindows.classList.toggle('is-visible', secao === 'windows');
-                cardPs4.classList.toggle('is-visible', secao === 'ps4');
+                // 2. LAST: Move o elemento no DOM para o topo da pilha
+                stack.prepend(targetBtn);
 
-                // Reinicia a animação da barra de tempo no card aberto
+                // 3. INVERT: Aplica transformacao inversa imediata
+                allBtns.forEach(btn => {
+                    const firstTop = firstPositions.get(btn);
+                    const lastTop = btn.getBoundingClientRect().top;
+                    const deltaY = firstTop - lastTop;
+
+                    if (deltaY !== 0) {
+                        btn.style.transition = 'none';
+                        btn.style.transform = `translateY(${deltaY}px)`;
+                    }
+                });
+
+                // 4. PLAY: Anima suavemente para zero
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        allBtns.forEach(btn => {
+                            btn.style.transition = 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s, border-color 0.25s, box-shadow 0.25s';
+                            btn.style.transform = '';
+                        });
+                    });
+                });
+            }
+
+            function selectDevice(secao, toggleCard = true) {
+                if (!stack) return;
+                const btn = stack.querySelector(`.device-btn[data-section="${secao}"]`);
+                if (!btn) return;
+
+                // Move o botao selecionado para o topo da lista de forma animada e suave
+                animateReorder(btn);
+
+                // Atualiza estados visuais dos botoes
+                stack.querySelectorAll('.device-btn').forEach(b => {
+                    const isActive = b.dataset.section === secao;
+                    b.classList.toggle('is-active', isActive);
+                    b.setAttribute('aria-pressed', String(isActive));
+                });
+
+                activeDevice = secao;
+                if (hidebarLabel) {
+                    hidebarLabel.textContent = secao.toUpperCase();
+                }
+
+                // No mobile, recolhe a hidebar suavemente para focar a visualizacao no card de dados
+                if (window.innerWidth <= 768 && networkSidebar && networkSidebar.classList.contains('hidebar-open')) {
+                    toggleMobileHidebar(false);
+                }
+
+                if (toggleCard) {
+                    if (painelAberto === secao) {
+                        fecharPaineis();
+                    } else {
+                        abrirPainel(secao);
+                    }
+                } else if (painelAberto) {
+                    abrirPainel(secao);
+                }
+            }
+
+            function atualizarLuzRadar() {
+                const radar = document.getElementById('net-radar-pulse');
+                const netHeader = document.getElementById('sidebar-net-header');
+                if (!radar) return;
+
+                if (!painelAberto) {
+                    // Bolinha do lado esquerdo em Sistemas e Hosts permanece verde por padrão
+                    radar.classList.remove('is-offline');
+                    radar.classList.add('is-online');
+                    if (netHeader) {
+                        netHeader.classList.remove('is-offline');
+                        netHeader.classList.remove('is-online');
+                    }
+                    return;
+                }
+
+                const activeBtn = stack ? stack.querySelector(`.device-btn[data-section="${painelAberto}"]`) : null;
+                const isOnline = activeBtn ? activeBtn.classList.contains('host-online') : false;
+
+                radar.classList.toggle('is-online', isOnline);
+                radar.classList.toggle('is-offline', !isOnline);
+                if (netHeader) {
+                    netHeader.classList.toggle('is-online', isOnline);
+                    netHeader.classList.toggle('is-offline', !isOnline);
+                }
+            }
+
+            function abrirPainel(secao) {
+                const stage = document.getElementById('painel-center-stage');
+                if (stage) stage.classList.add('card-is-active');
+                painelAberto = secao;
+
+                if (cardLinux) cardLinux.classList.toggle('is-visible', secao === 'linux');
+                if (cardWindows) cardWindows.classList.toggle('is-visible', secao === 'windows');
+                if (cardPs4) cardPs4.classList.toggle('is-visible', secao === 'ps4');
+
+                // Atualiza a luz do radar em 'Sistemas e Hosts'
+                atualizarLuzRadar();
+
+                // Reinicia a barra de progresso do timer de 40s
                 const activeCard = document.getElementById('card-' + secao);
                 if (activeCard) {
                     const bar = activeCard.querySelector('.card-timeout-bar');
                     if (bar) {
                         bar.style.animation = 'none';
-                        void bar.offsetWidth; // Força reflow
+                        void bar.offsetWidth;
                         bar.style.animation = '';
                     }
                 }
 
-                // Inicia a contagem de 40 segundos
                 iniciarTimerAutoFechar();
             }
 
             function fecharPaineis() {
+                const stage = document.getElementById('painel-center-stage');
+                if (stage) stage.classList.remove('card-is-active');
                 pararTimerAutoFechar();
                 painelAberto = null;
-                stage.classList.remove('painel-aberto');
-                faceHint.textContent = 'Clique para abrir';
-                cardLinux.classList.remove('is-visible');
-                cardWindows.classList.remove('is-visible');
-                cardPs4.classList.remove('is-visible');
-                stops.forEach(s => s.classList.remove('is-open'));
+                activeDevice = null;
+
+                // Remove o estado is-active de todos os botões -> voltam a ficar cinzas
+                if (stack) {
+                    stack.querySelectorAll('.device-btn').forEach(b => {
+                        b.classList.remove('is-active');
+                        b.setAttribute('aria-pressed', 'false');
+                    });
+                }
+
+                // Luz do radar em 'Sistemas e Hosts' volta ao cinza neutro
+                atualizarLuzRadar();
+
+                if (cardLinux) cardLinux.classList.remove('is-visible');
+                if (cardWindows) cardWindows.classList.remove('is-visible');
+                if (cardPs4) cardPs4.classList.remove('is-visible');
             }
 
-            window.fecharTodosPaineis = fecharPaineis;
+            function toggleMobileHidebar(forceState) {
+                if (!networkSidebar) return;
+                const shouldOpen = typeof forceState === 'boolean' ? forceState : !networkSidebar.classList.contains('hidebar-open');
+                networkSidebar.classList.toggle('hidebar-open', shouldOpen);
+                if (hidebarToggle) {
+                    hidebarToggle.setAttribute('aria-expanded', String(shouldOpen));
+                }
+            }
 
-            // Se o usuário digitar ou interagir com inputs no card (ex: PIN do PS4), concede mais 40s
+            window.selectDevice = selectDevice;
+            window.fecharTodosPaineis = fecharPaineis;
+            window.toggleMobileHidebar = toggleMobileHidebar;
+            window.iniciarTimerAutoFechar = iniciarTimerAutoFechar;
+            window.atualizarLuzRadar = atualizarLuzRadar;
+
+            // Se o usuario interagir com inputs no card (ex: PIN do PS4), concede mais 40s
             [cardLinux, cardWindows, cardPs4].forEach(card => {
                 if (!card) return;
                 ['input', 'keydown'].forEach(evt => {
                     card.addEventListener(evt, () => {
-                        if (painelAberto) {
-                            iniciarTimerAutoFechar();
-                        }
+                        if (painelAberto) iniciarTimerAutoFechar();
                     }, { passive: true });
                 });
             });
 
-            stops.forEach((s, k) => {
-                s.addEventListener('click', () => {
-                    goTo(k, true);
-                });
-            });
+            // Inicialização limpa: nenhum card aberto por padrão
+            fecharPaineis();
 
-            face.addEventListener('click', (e) => {
-                if (e.target.closest('.ccm-11__steer')) return;
-                const targetSecao = stops[active].dataset.section;
-                if (painelAberto === targetSecao) {
-                    fecharPaineis();
-                } else {
-                    abrirPainel(targetSecao);
-                }
-            });
-
-            machine.querySelector('.ccm-11__prev').addEventListener('click', (e) => {
-                e.stopPropagation();
-                goTo(active - 1);
-            });
-            machine.querySelector('.ccm-11__next').addEventListener('click', (e) => {
-                e.stopPropagation();
-                goTo(active + 1);
-            });
         })();
 
         // -------------------------------------------------------------
@@ -2419,6 +3151,54 @@ foreach ($windows['discos'] as $wd) {
                 .replace(/"/g, '&quot;');
         }
 
+        window.notificacaoEspacoDados = {
+            temAlerta: <?= $temAlerta20GB ? 'true' : 'false' ?>,
+            alertas: <?= json_encode($alertasEspaco, JSON_UNESCAPED_UNICODE) ?>
+        };
+
+        function verificarNotificacaoEspaco() {
+            const toast = document.getElementById('sync-toast');
+            if (!toast) return;
+
+            const dados = window.notificacaoEspacoDados || { temAlerta: false, alertas: [] };
+            toast.style.display = 'flex';
+
+            if (dados.temAlerta) {
+                toast.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+                toast.style.background = 'rgba(17, 23, 20, 0.95)';
+                const itensHtml = dados.alertas.map(a => `<li style="margin-top:2px;">${escapeHtml(a)}</li>`).join('');
+                toast.innerHTML = `
+                    <div style="display:flex; flex-direction:column; gap:4px; text-align:left;">
+                        <div style="display:flex; align-items:center; gap:6px; font-weight:700; color:var(--amarelo);">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                            <span>Notificação de Armazenamento (Atenção)</span>
+                        </div>
+                        <div style="font-size:11px; color:var(--ink-sec);">
+                            Equipamentos com menos de 20 GB de espaço livre disponível:
+                            <ul style="margin:4px 0 0 16px; padding:0; color:var(--ink);">
+                                ${itensHtml}
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            } else {
+                toast.style.borderColor = 'rgba(34, 197, 94, 0.45)';
+                toast.style.background = 'rgba(17, 23, 20, 0.95)';
+                toast.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <span style="font-size:11.5px; color:var(--ink);"><strong style="color:var(--brand)">Armazenamento Normal:</strong> Todos os equipamentos possuem mais de 20 GB de espaço livre.</span>
+                    </div>
+                `;
+            }
+
+            clearTimeout(window.toastTimeout);
+            window.toastTimeout = setTimeout(() => {
+                if (toast) toast.style.display = 'none';
+            }, 6000);
+        }
+        window.verificarNotificacaoEspaco = verificarNotificacaoEspaco;
+
         async function sincronizarDados(manual = false) {
             try {
                 const agora = new Date();
@@ -2496,49 +3276,71 @@ foreach ($windows['discos'] as $wd) {
                         winTxt.textContent = d.windows.status_texto || (d.windows.ativo_online ? 'Online' : 'Conectado');
                     }
 
-                    if (d.windows.segundos_atras !== null && d.windows.segundos_atras !== undefined) {
-                        segWin = d.windows.segundos_atras;
-                        const tWin = document.getElementById('win-tempo-relativo');
-                        if (tWin) tWin.textContent = formatarTempo(segWin);
-                    }
+                    // 4 Métricas Chave do Windows
+                    const winIp = document.getElementById('draw-win-ip');
+                    if (winIp && d.windows.ip) winIp.textContent = d.windows.ip;
 
-                    const winDataSinc = document.getElementById('win-data-sinc');
-                    if (winDataSinc && d.windows.data_formatada) {
-                        winDataSinc.textContent = d.windows.data_formatada;
-                    }
+                    const winUp = document.getElementById('draw-win-uptime');
+                    if (winUp && d.windows.recursos?.uptime) winUp.textContent = d.windows.recursos.uptime;
+
+                    const winRam = document.getElementById('draw-win-ram');
+                    if (winRam && d.windows.recursos?.mem_resumo) winRam.textContent = d.windows.recursos.mem_resumo;
+
+                    const winSaude = document.getElementById('draw-win-saude');
+                    if (winSaude && d.windows.recursos?.saude_disco) winSaude.textContent = d.windows.recursos.saude_disco;
+
+                    const winTot = document.getElementById('win-disco-total');
+                    if (winTot && d.windows.recursos?.disco_capacidade_gb) winTot.textContent = 'Disco C: ' + d.windows.recursos.disco_capacidade_gb;
+
+                    const winMod = document.getElementById('win-disco-modelo');
+                    if (winMod && d.windows.recursos?.disco_modelo) winMod.textContent = d.windows.recursos.disco_modelo + ' • Sincronizado';
 
                     if (d.windows.discos && d.windows.discos.length > 0) {
-                        const container = document.getElementById('lista-volumes-windows');
-                        if (container) {
-                            let htmlWin = '';
-                            for (const w of d.windows.discos) {
-                                const pctVal = typeof w.pct === 'number' ? w.pct : parseFloat(w.pct);
-                                const pctFmt = pctVal.toFixed(1).replace('.', ',');
-                                const sitCls = w.situacao?.classe || 'normal';
-                                htmlWin += `
-                                    <div class="main-storage-box">
-                                        <div class="storage-head">
-                                            <span class="storage-title">
-                                                <strong>Unidade ${escapeHtml(w.unidade)}</strong> (${escapeHtml(w.rotulo)})
-                                            </span>
-                                            <span class="storage-pct mono ${sitCls}">
-                                                ${pctFmt}%
-                                            </span>
-                                        </div>
-                                        <div class="storage-stats">
-                                            <div><span class="s-lbl">Total</span><span class="s-num mono">${escapeHtml(w.total_gb)}</span></div>
-                                            <div><span class="s-lbl">Usado</span><span class="s-num mono">${escapeHtml(w.usado_gb)}</span></div>
-                                            <div><span class="s-lbl">Livre</span><span class="s-num mono livre">${escapeHtml(w.livre_gb)}</span></div>
-                                        </div>
-                                        <div class="storage-bar">
-                                            <div class="storage-bar-fill ${sitCls}" style="width: ${pctVal.toFixed(1)}%"></div>
-                                        </div>
-                                    </div>
-                                `;
-                            }
-                            container.innerHTML = htmlWin;
+                        const w = d.windows.discos[0];
+                        const cPct = document.getElementById('win-c-pct');
+                        const cTot = document.getElementById('win-c-tot');
+                        const cUsa = document.getElementById('win-c-usa');
+                        const cLiv = document.getElementById('win-c-liv');
+                        const cBar = document.getElementById('win-c-bar');
+
+                        const pctVal = typeof w.pct === 'number' ? w.pct : parseFloat(w.pct);
+                        const sitCls = w.situacao?.classe || 'normal';
+
+                        if (cPct) {
+                            cPct.textContent = pctVal.toFixed(1).replace('.', ',') + '%';
+                            cPct.className = 'storage-pct mono ' + sitCls;
+                        }
+                        if (cTot) cTot.textContent = w.total_gb;
+                        if (cUsa) cUsa.textContent = w.usado_gb;
+                        if (cLiv) cLiv.textContent = w.livre_gb;
+                        if (cBar) {
+                            cBar.style.width = pctVal.toFixed(1) + '%';
+                            cBar.className = 'storage-bar-fill ' + sitCls;
                         }
                     }
+                }
+
+                // Atualizar luzes de status nos botões (Verde = Online, Vermelho = Offline)
+                const btnLin = document.getElementById('btn-dev-linux');
+                if (btnLin) {
+                    btnLin.classList.toggle('host-online', true);
+                    btnLin.classList.toggle('host-offline', false);
+                }
+                const btnWin = document.getElementById('btn-dev-windows');
+                if (btnWin && d.windows) {
+                    const winIsOn = !!d.windows.ativo_online;
+                    btnWin.classList.toggle('host-online', winIsOn);
+                    btnWin.classList.toggle('host-offline', !winIsOn);
+                }
+                const btnPs = document.getElementById('btn-dev-ps4');
+                if (btnPs && d.ps4) {
+                    const psIsOn = !!d.ps4.online;
+                    btnPs.classList.toggle('host-online', psIsOn);
+                    btnPs.classList.toggle('host-offline', !psIsOn);
+                }
+
+                if (window.atualizarLuzRadar) {
+                    window.atualizarLuzRadar();
                 }
 
                 // 4. Atualizar PS4
@@ -2572,23 +3374,53 @@ foreach ($windows['discos'] as $wd) {
                     if (ps4SysVer) ps4SysVer.textContent = d.ps4.sistema_versao || 'N/A';
                 }
 
-                // 5. Alerta Badge do Header
-                let volAlerta = 0;
+                // 5. Alerta de Armazenamento (< 20 GB livres em qualquer equipamento)
+                const limite20GBBytes = 20 * 1024 * 1024 * 1024;
+                let listaAlertas20GB = [];
+
                 if (d.linux_volumes) {
-                    d.linux_volumes.forEach(v => { if (v.pct >= 75) volAlerta++; });
+                    d.linux_volumes.forEach(v => {
+                        if (v.ponto === '/' && v.livre_bytes !== undefined && v.livre_bytes < limite20GBBytes) {
+                            listaAlertas20GB.push(`Linux (${v.nome}): apenas ${v.livre_gb} livres (< 20 GB)`);
+                        }
+                    });
                 }
                 if (d.windows?.discos) {
-                    d.windows.discos.forEach(w => { if (w.pct >= 75) volAlerta++; });
+                    d.windows.discos.forEach(w => {
+                        if (w.livre_bytes !== undefined && w.livre_bytes < limite20GBBytes) {
+                            listaAlertas20GB.push(`Windows (${w.unidade}): apenas ${w.livre_gb} livres (< 20 GB)`);
+                        }
+                    });
                 }
+
+                window.notificacaoEspacoDados = {
+                    temAlerta: listaAlertas20GB.length > 0,
+                    alertas: listaAlertas20GB
+                };
+
                 const hBadge = document.getElementById('header-alerta-badge');
                 const hBadgeTxt = document.getElementById('header-alerta-texto');
-                if (hBadge && hBadgeTxt) {
-                    if (volAlerta > 0) {
+                const hBadgeIcon = document.getElementById('header-alerta-icone');
+
+                if (hBadge && hBadgeTxt && hBadgeIcon) {
+                    if (listaAlertas20GB.length > 0) {
                         hBadge.className = 'status-alerta-badge atencao';
-                        hBadgeTxt.textContent = `Atenção (${volAlerta} volume)`;
+                        hBadgeTxt.textContent = 'Atenção';
+                        hBadgeIcon.innerHTML = `
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                <line x1="12" y1="9" x2="12" y2="13"></line>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                        `;
                     } else {
                         hBadge.className = 'status-alerta-badge normal';
-                        hBadgeTxt.textContent = 'Infraestrutura OK';
+                        hBadgeTxt.textContent = 'Normal';
+                        hBadgeIcon.innerHTML = `
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                        `;
                     }
                 }
 
@@ -2598,6 +3430,115 @@ foreach ($windows['discos'] as $wd) {
                 throw e;
             }
         }
+
+        // =============================================================
+        // 7. CONTABILIZADOR DE PING EM TEMPO REAL (ATUALIZA A CADA 5s)
+        // =============================================================
+        async function atualizarPings() {
+            try {
+                const resp = await fetch('index.php?api=pings&t=' + Date.now(), {
+                    headers: { 'Accept': 'application/json' },
+                    cache: 'no-store'
+                });
+                if (!resp.ok) return;
+                const d = await resp.json();
+                if (d && d.sucesso && d.pings) {
+                    ['linux', 'windows', 'ps4'].forEach(host => {
+                        const info = d.pings[host];
+                        if (!info) return;
+                        const badge = document.getElementById('ping-badge-' + host);
+                        if (badge) {
+                            badge.textContent = info.texto;
+                            badge.className = 'btn-ping-badge ' + (info.classe || 'ping-vermelho');
+                            badge.title = 'Latência ICMP: ' + info.texto;
+                        }
+                    });
+                }
+            } catch (err) {
+                // Silencioso para evitar ruído de console em caso de oscilação momentânea
+            }
+        }
+
+        // Executa atualização do ping a cada 5 segundos
+        setInterval(atualizarPings, 5000);
+
+        // =============================================================
+        // 8. CONTROLES DO PLAYER LIQUID GLASS — BH FM
+        // =============================================================
+        const audioRadio = document.getElementById('audio-bhfm');
+        const radioPlayerEl = document.getElementById('liquid-radio-player');
+        const radioPlayIcon = document.getElementById('radio-play-icon');
+        const radioPauseIcon = document.getElementById('radio-pause-icon');
+        const radioVolSlider = document.getElementById('radio-vol-slider');
+
+        function toggleRadio() {
+            if (!audioRadio) return;
+            if (audioRadio.paused) {
+                // Carrega stream para garantir transmissão em tempo real sem latência acumulada
+                audioRadio.load();
+                audioRadio.play().then(() => {
+                    if (radioPlayerEl) radioPlayerEl.classList.add('is-playing');
+                    if (radioPlayIcon) radioPlayIcon.style.display = 'none';
+                    if (radioPauseIcon) radioPauseIcon.style.display = 'block';
+                }).catch(err => {
+                    console.warn('Erro ao reproduzir Rádio BH FM:', err);
+                });
+            } else {
+                audioRadio.pause();
+                if (radioPlayerEl) radioPlayerEl.classList.remove('is-playing');
+                if (radioPlayIcon) radioPlayIcon.style.display = 'block';
+                if (radioPauseIcon) radioPauseIcon.style.display = 'none';
+            }
+        }
+
+        function setRadioVolume(val) {
+            if (!audioRadio) return;
+            const vol = parseFloat(val);
+            audioRadio.volume = vol;
+            if (audioRadio.muted && vol > 0) {
+                audioRadio.muted = false;
+                atualizarIconeMute(false);
+            }
+        }
+
+        function toggleRadioMute() {
+            if (!audioRadio) return;
+            audioRadio.muted = !audioRadio.muted;
+            atualizarIconeMute(audioRadio.muted);
+        }
+
+        function atualizarIconeMute(mutado) {
+            const icoMuted = document.getElementById('icon-vol-muted');
+            const icoHigh = document.getElementById('icon-vol-high');
+            if (icoMuted && icoHigh) {
+                icoMuted.style.display = mutado ? 'block' : 'none';
+                icoHigh.style.display = mutado ? 'none' : 'block';
+            }
+        }
+
+        if (audioRadio) {
+            audioRadio.volume = 0.8;
+            audioRadio.addEventListener('pause', () => {
+                if (radioPlayerEl) radioPlayerEl.classList.remove('is-playing');
+                if (radioPlayIcon) radioPlayIcon.style.display = 'block';
+                if (radioPauseIcon) radioPauseIcon.style.display = 'none';
+            });
+            audioRadio.addEventListener('play', () => {
+                if (radioPlayerEl) radioPlayerEl.classList.add('is-playing');
+                if (radioPlayIcon) radioPlayIcon.style.display = 'none';
+                if (radioPauseIcon) radioPauseIcon.style.display = 'block';
+            });
+            audioRadio.addEventListener('ended', () => {
+                if (radioPlayerEl) radioPlayerEl.classList.remove('is-playing');
+                if (radioPlayIcon) radioPlayIcon.style.display = 'block';
+                if (radioPauseIcon) radioPauseIcon.style.display = 'none';
+            });
+        }
+
+        window.toggleRadio = toggleRadio;
+        window.setRadioVolume = setRadioVolume;
+        window.toggleRadioMute = toggleRadioMute;
+        window.atualizarPings = atualizarPings;
     </script>
 </body>
 </html>
