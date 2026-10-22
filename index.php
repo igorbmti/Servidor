@@ -1132,11 +1132,12 @@ $temAlerta20GB = !empty($alertasEspaco);
 
         /* SIDEBAR FLUTUANTE À ESQUERDA (SEM LINHAS EXTERNAS / SEM BORDAS DE QUADRO) */
         .network-sidebar {
-            width: 268px;
+            width: 220px;
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            align-items: center;
+            gap: 12px;
             background: transparent;
             border: none;
             padding: 0;
@@ -1148,10 +1149,13 @@ $temAlerta20GB = !empty($alertasEspaco);
         .sidebar-net-header {
             display: flex;
             align-items: center;
-            gap: 12px;
+            justify-content: center;
+            gap: 10px;
             padding: 4px 8px 10px 8px;
             border-bottom: 1px solid rgba(38, 53, 43, 0.5);
             margin-bottom: 2px;
+            width: 100%;
+            max-width: 190px;
             transition: border-color 0.25s ease;
         }
 
@@ -1238,30 +1242,34 @@ $temAlerta20GB = !empty($alertasEspaco);
             70%, 100% { transform: scale(2.4); opacity: 0; }
         }
 
-        /* PILHA DE BOTÕES REORDENÁVEIS (DEVICES STACK) */
+        /* PILHA DE BOTÕES (DEVICES STACK) CENTRALIZADA E ALINHADA */
         .devices-stack {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
             position: relative;
         }
 
         .device-btn {
             width: 100%;
+            max-width: 170px;
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 8px 10px;
+            justify-content: flex-start;
+            gap: 14px;
+            padding: 9px 24px;
             background: rgba(17, 23, 20, 0.85);
             border: 1px solid var(--borda);
-            border-radius: 10px;
+            border-radius: 12px;
             color: var(--ink-sec);
             cursor: pointer;
             text-align: left;
             font-family: 'Inter', system-ui, sans-serif;
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            transition: background 0.25s, border-color 0.25s, color 0.25s, box-shadow 0.25s, transform 0.25s;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             user-select: none;
             box-sizing: border-box;
             position: relative;
@@ -1270,139 +1278,75 @@ $temAlerta20GB = !empty($alertasEspaco);
         .device-btn:hover {
             background: var(--bg-secundario);
             border-color: rgba(34, 197, 94, 0.35);
-            color: var(--ink);
-            transform: translateX(3px);
+            color: #FFFFFF;
+            transform: translateY(-2px);
         }
 
         .device-btn.is-active {
             color: #FFFFFF;
-            transform: translateX(4px);
-        }
-
-        /* LUZ INDICADORA NO BOTÃO: SEMPRE CINZA SE NÃO ESTIVER CLICADO */
-        .device-btn .btn-dev-indicator {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #64748B !important;
-            box-shadow: none !important;
-            transition: background 0.25s, box-shadow 0.25s;
-            flex-shrink: 0;
-        }
-
-        .device-btn:not(.is-active) .btn-dev-indicator {
-            background: #64748B !important;
-            box-shadow: none !important;
-        }
-
-        /* SOMENTE O BOTÃO CLICADO (.is-active) ACENDE */
-        .device-btn.is-active.host-online .btn-dev-indicator {
-            background: var(--brand) !important;
-            box-shadow: 0 0 10px var(--brand) !important;
-        }
-
-        .device-btn.is-active.host-online {
-            background: rgba(34, 197, 94, 0.12);
+            transform: translateY(-2px);
+            background: rgba(34, 197, 94, 0.15);
             border-color: var(--brand);
-            box-shadow: 0 0 18px -3px rgba(34, 197, 94, 0.45);
-        }
-
-        .device-btn.is-active.host-offline .btn-dev-indicator {
-            background: var(--vermelho) !important;
-            box-shadow: 0 0 10px var(--vermelho) !important;
-        }
-
-        .device-btn.is-active.host-offline {
-            background: rgba(239, 68, 68, 0.12);
-            border-color: var(--vermelho);
-            box-shadow: 0 0 18px -3px rgba(239, 68, 68, 0.45);
+            box-shadow: 0 0 16px -2px rgba(34, 197, 94, 0.45);
         }
 
         .device-btn .btn-os-icon {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             display: grid;
             place-items: center;
             flex-shrink: 0;
         }
 
         .device-btn .btn-os-icon svg {
-            width: 17px;
-            height: 17px;
-        }
-
-        .device-btn .btn-dev-info {
-            display: flex;
-            align-items: baseline;
-            gap: 4px;
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-            white-space: nowrap;
+            width: 18px;
+            height: 18px;
         }
 
         .device-btn .btn-dev-label {
-            font-size: 11.5px;
+            font-size: 13.5px;
             font-weight: 700;
             color: var(--ink);
-            line-height: 1.2;
-            display: inline-flex;
-            align-items: baseline;
-            gap: 4px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .device-btn .btn-dev-sub {
-            font-size: 10px;
-            font-weight: 500;
-            color: var(--ink-muted);
-        }
-
-        .device-btn.is-active .btn-dev-sub {
-            color: rgba(236, 253, 245, 0.85);
-        }
-
-        /* CONTABILIZADOR DE PING EM 'SISTEMAS E HOSTS' (SOMENTE TEXTO, SEM CARD/BORDA) */
-        .btn-ping-badge {
-            display: inline-flex;
-            align-items: center;
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            padding: 0 !important;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 8.5px;
-            font-weight: 600;
+            letter-spacing: 0.3px;
             line-height: 1;
-            letter-spacing: -0.2px;
-            white-space: nowrap;
-            margin-left: auto;
-            margin-right: 6px;
-            flex-shrink: 0;
+        }
+
+        .device-btn.is-active .btn-dev-label {
+            color: #FFFFFF;
+        }
+
+        /* INFORMATIVO DE PING DO SISTEMA CENTRALIZADO NO RODAPÉ DO CARD */
+        .card-footer-ping {
+            text-align: center;
+            font-size: 11px;
+            color: var(--ink-muted);
+            padding: 8px 0 2px 0;
+            margin-top: auto;
+            width: 100%;
+            letter-spacing: 0.2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .card-footer-ping .card-ping-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 11px;
             transition: color 0.3s ease;
         }
 
-        .btn-ping-badge.ping-verde {
-            color: #22C55E;
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
+        .card-footer-ping .card-ping-val.ping-verde {
+            color: #22C55E !important;
         }
 
-        .btn-ping-badge.ping-amarelo {
-            color: #F59E0B;
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
+        .card-footer-ping .card-ping-val.ping-amarelo {
+            color: #F59E0B !important;
         }
 
-        .btn-ping-badge.ping-vermelho {
-            color: #EF4444;
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
+        .card-footer-ping .card-ping-val.ping-vermelho {
+            color: #EF4444 !important;
         }
 
         /* =============================================================
@@ -1649,91 +1593,244 @@ $temAlerta20GB = !empty($alertasEspaco);
         
         
 
-        /* PALCO CENTRAL */
+        /* =============================================================
+           CARROSSEL 3D EM PERSPECTIVA NO CENTRO DA PÁGINA
+           ============================================================= */
         .painel-center-stage {
             flex: 1;
             display: flex;
             align-items: center;
-            justify-content: flex-end;
-            position: relative;
+            justify-content: center;
+            position: static; /* o carrossel se posiciona em relação ao layout inteiro */
             min-height: 520px;
             padding: 0;
             box-sizing: border-box;
         }
 
-        .card-timeout-bar {
+        /* Card centralizado no MEIO DA PÁGINA (proporção quadrada do modelo: 23rem) */
+        .carousel-3d-wrapper {
             position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 23rem;
+            height: 25rem;
+            z-index: 15;
+        }
+
+        @media (max-width: 1100px) {
+            .painel-center-stage {
+                position: relative;
+            }
+            .carousel-3d-wrapper {
+                position: relative;
+                left: auto;
+                top: auto;
+                transform: none;
+                margin: 0 auto;
+                max-width: calc(100vw - 100px);
+            }
+        }
+
+        .carousel {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            perspective: 500px;
+            transform-style: preserve-3d;
+        }
+
+        .card-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
             top: 0;
             left: 0;
-            right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, var(--brand), #4ade80);
-            box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
-            transform-origin: left;
-            border-top-left-radius: 14px;
-            border-top-right-radius: 14px;
-            pointer-events: none;
+            transform: 
+                rotateY(calc(var(--offset) * 50deg)) 
+                scaleY(calc(1 + var(--abs-offset) * -0.4))
+                translateZ(calc(var(--abs-offset) * -30rem))
+                translateX(calc(var(--direction) * -5rem));
+            filter: blur(calc(var(--abs-offset) * 0.8rem));
+            transition: all 0.35s ease-out;
+            transform-style: preserve-3d;
+            box-sizing: border-box;
+            cursor: pointer;
         }
 
-        .compact-card.is-visible .card-timeout-bar {
-            animation: cardTimeoutProgress 40s linear forwards;
+        .card-container[style*="--active: 1"],
+        .card-container[style*="--active:1"] {
+            cursor: default;
         }
 
-        @keyframes cardTimeoutProgress {
-            from { transform: scaleX(1); }
-            to { transform: scaleX(0); }
-        }
-
-        /* =============================================================
-           CARD COMPACTO E ENXUTO DE DADOS (CENTRALIZADO NO PALCO)
-           ============================================================= */
-        .compact-card {
-            display: none;
+        /* CARDS COM FUNDO PRETO (ATIVO) E PAINÉIS LATERAIS LEVEMENTE CLAREADOS (COMO NO MODELO) */
+        .card {
+            width: 100%;
+            height: 100%;
+            padding: 16px 16px 14px;
+            background-color: hsl(150, 10%, calc(var(--abs-offset, 0) * 18%)) !important;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 12px;
+            color: var(--ink-sec);
+            text-align: left;
+            transition: all 0.3s ease-out;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.95), 0 0 1px rgba(255, 255, 255, 0.2);
+            display: flex;
             flex-direction: column;
             gap: 5px;
-            width: 310px;
-            max-width: 100%;
-            max-height: calc(100vh - 84px);
             overflow-y: auto;
+            overflow-x: hidden;
+            box-sizing: border-box;
             position: relative;
-            background: rgba(10, 14, 12, 0.94);
-            border: 1px solid var(--borda);
-            border-radius: 11px;
-            padding: 10px 12px;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9), 0 0 1px rgba(34, 197, 94, 0.3);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            transition: border-color 0.3s;
-            z-index: 10;
         }
 
-        .compact-card::-webkit-scrollbar {
+        /* Conteúdo só aparece no card ativo (cards laterais ficam como painéis limpos) */
+        .carousel .card > * {
+            opacity: var(--active, 1);
+            transition: opacity 0.3s ease-out;
+        }
+
+        .card::-webkit-scrollbar {
             width: 3px;
         }
-
-        .compact-card::-webkit-scrollbar-track {
+        .card::-webkit-scrollbar-track {
             background: transparent;
         }
-
-        .compact-card::-webkit-scrollbar-thumb {
+        .card::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.15);
-            border-radius: 4px;
+            border-radius: 3px;
         }
 
-        .compact-card.is-visible {
+        .card-brand-title {
+            font-size: 19px;
+            font-weight: 700;
+            color: #FFFFFF;
+            margin: 0;
+            line-height: 1.15;
+            text-align: center;
+            letter-spacing: 0.2px;
+        }
+
+        /* CABEÇALHO CENTRALIZADO (TÍTULO NO CENTRO COMO NO MODELO) */
+        .carousel .card-top {
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding-bottom: 10px;
+            margin-bottom: 4px;
+            text-align: center;
+        }
+
+        .carousel .card-brand {
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .carousel .card-brand > div:last-child {
             display: flex;
-            animation: cardSlideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
         }
 
-        @keyframes cardSlideInRight {
-            from {
-                opacity: 0;
-                transform: translateX(36px) scale(0.97);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0) scale(1);
-            }
+        .carousel .card-brand .card-brand-title {
+            text-align: left;
+        }
+
+        .carousel .brand-icon-box {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+        }
+
+        .carousel .brand-icon-box svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .carousel .card-brand .card-sub {
+            font-size: 9.5px;
+        }
+
+        .carousel .card-top-right {
+            justify-content: center;
+        }
+
+        /* Efeito de destaque para os cards quando ativos */
+        #card-linux {
+            border-color: rgba(34, 197, 94, 0.25);
+        }
+        .card-container[style*="--active: 1"] #card-linux,
+        .card-container[style*="--active:1"] #card-linux {
+            border-color: rgba(34, 197, 94, 0.5);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.98), 0 0 25px rgba(34, 197, 94, 0.2);
+        }
+
+        #card-windows {
+            border-color: rgba(56, 189, 248, 0.25);
+        }
+        .card-container[style*="--active: 1"] #card-windows,
+        .card-container[style*="--active:1"] #card-windows {
+            border-color: rgba(56, 189, 248, 0.5);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.98), 0 0 25px rgba(56, 189, 248, 0.2);
+        }
+
+        #card-ps4 {
+            border-color: rgba(0, 112, 209, 0.25);
+        }
+        .card-container[style*="--active: 1"] #card-ps4,
+        .card-container[style*="--active:1"] #card-ps4 {
+            border-color: rgba(0, 112, 209, 0.5);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.98), 0 0 25px rgba(0, 112, 209, 0.2);
+        }
+
+        /* BOTÕES DE NAVEGAÇÃO PASSAR PARA DIREITA E ESQUERDA */
+        /* SETAS BRANCAS SEM FUNDO, NAS BORDAS DO CARD (IGUAL AO MODELO) */
+        .nav {
+            color: #FFFFFF;
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            top: 50%;
+            z-index: 35;
+            cursor: pointer;
+            user-select: none;
+            background: unset;
+            border: unset;
+            padding: 0 6px;
+            line-height: 1;
+            filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.9));
+            transition: color 0.2s ease, filter 0.2s ease;
+        }
+
+        .nav svg {
+            width: 46px;
+            height: 46px;
+        }
+
+        .nav:hover {
+            color: var(--brand);
+            filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.7));
+        }
+
+        .nav.left {
+            left: 0;
+            transform: translateX(-100%) translateY(-50%);
+        }
+
+        .nav.right {
+            right: 0;
+            transform: translateX(100%) translateY(-50%);
+        }
+
+        .nav.is-disabled {
+            opacity: 0;
+            pointer-events: none;
+            cursor: default;
         }
 
         .card-top {
@@ -2313,11 +2410,7 @@ $temAlerta20GB = !empty($alertasEspaco);
                             <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/>
                         </svg>
                     </span>
-                    <div class="btn-dev-info">
-                        <span class="btn-dev-label">Linux <span class="btn-dev-sub">(Notebook Servidor)</span></span>
-                    </div>
-                    <span class="btn-ping-badge <?= htmlspecialchars($pingsIniciais['linux']['classe'] ?? 'ping-verde') ?>" id="ping-badge-linux" title="Latência ICMP: <?= htmlspecialchars($pingsIniciais['linux']['texto'] ?? '1ms') ?>"><?= htmlspecialchars($pingsIniciais['linux']['texto'] ?? '1ms') ?></span>
-                    <span class="btn-dev-indicator"></span>
+                    <span class="btn-dev-label">Linux</span>
                 </button>
 
                 <!-- BOTÃO WINDOWS -->
@@ -2328,11 +2421,7 @@ $temAlerta20GB = !empty($alertasEspaco);
                             <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.902-1.799"/>
                         </svg>
                     </span>
-                    <div class="btn-dev-info">
-                        <span class="btn-dev-label">Windows <span class="btn-dev-sub">(Notebook)</span></span>
-                    </div>
-                    <span class="btn-ping-badge <?= htmlspecialchars($pingsIniciais['windows']['classe'] ?? 'ping-verde') ?>" id="ping-badge-windows" title="Latência ICMP: <?= htmlspecialchars($pingsIniciais['windows']['texto'] ?? '2ms') ?>"><?= htmlspecialchars($pingsIniciais['windows']['texto'] ?? '2ms') ?></span>
-                    <span class="btn-dev-indicator"></span>
+                    <span class="btn-dev-label">Windows</span>
                 </button>
 
                 <!-- BOTÃO PS4 -->
@@ -2343,369 +2432,384 @@ $temAlerta20GB = !empty($alertasEspaco);
                             <path d="M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241l6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z"/>
                         </svg>
                     </span>
-                    <div class="btn-dev-info">
-                        <span class="btn-dev-label">PS4 <span class="btn-dev-sub">(Console Fat)</span></span>
-                    </div>
-                    <span class="btn-ping-badge <?= htmlspecialchars($pingsIniciais['ps4']['classe'] ?? 'ping-vermelho') ?>" id="ping-badge-ps4" title="Latência ICMP: <?= htmlspecialchars($pingsIniciais['ps4']['texto'] ?? 'Offline') ?>"><?= htmlspecialchars($pingsIniciais['ps4']['texto'] ?? 'Offline') ?></span>
-                    <span class="btn-dev-indicator"></span>
+                    <span class="btn-dev-label">PS4</span>
                 </button>
             </div>
         </aside>
 
-        <!-- PALCO CENTRAL ONDE OS CARDS SE ABREM -->
+        <!-- PALCO CENTRAL ONDE OS CARDS SE ABREM NO MODELO CARROSSEL 3D -->
         <section class="painel-center-stage" id="painel-center-stage">
+            <div class="carousel-3d-wrapper">
+                <!-- BOTÃO NAVEGAÇÃO VOLTAR PARA ESQUERDA -->
+                <button type="button" class="nav left" id="carousel-nav-prev" onclick="carouselMove(-1)" aria-label="Voltar para a esquerda" title="Voltar para a esquerda">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
 
-            
+                <!-- CONTAINER DO CARROSSEL 3D -->
+                <div class="carousel" id="carousel-3d">
 
-
-            <!-- =========================================================
-                 3. CARD COMPACTO: LINUX (NEXUS)
-                 ========================================================= -->
-            <div class="compact-card" id="card-linux">
-                <div class="card-timeout-bar" aria-hidden="true"></div>
-                <div class="card-top">
-                    <div class="card-brand">
-                        <div class="brand-icon-box linux-brand" title="Notebook Servidor Linux">
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#FCC624" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="4" width="18" height="12" rx="2"></rect>
-                                <line x1="2" y1="20" x2="22" y2="20"></line>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3>Linux</h3>
-                            <span class="card-sub">Notebook Servidor • Ubuntu 24.04 LTS</span>
-                        </div>
-                    </div>
-                    <div class="card-top-right">
-                        <span class="pill-status ok" id="linux-pill-status">
-                            <span class="ponto-pulsar"></span>
-                            <span id="linux-texto-status">Online</span>
-                        </span>
-                        <button class="btn-card-close" onclick="fecharTodosPaineis()" title="Fechar">✕</button>
-                    </div>
-                </div>
-
-                <!-- 4 MÉTRICAS-CHAVE EM GRID 2x2 (PADRÃO HARMONIZADO) -->
-                <div class="quick-grid">
-                    <div class="quick-metric">
-                        <span class="q-label">Endereço IP</span>
-                        <span class="q-val mono" id="draw-linux-ip" style="color: var(--brand);"><?= htmlspecialchars($linux['ip']) ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Tempo de Atividade</span>
-                        <span class="q-val mono" id="draw-linux-uptime" style="color: var(--brand);"><?= htmlspecialchars($linux['recursos']['uptime']) ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Memória RAM</span>
-                        <span class="q-val mono" id="draw-linux-ram"><?= $linux['recursos']['mem_usada_gb'] ?> / <?= $linux['recursos']['mem_total_gb'] ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Saúde Disco</span>
-                        <span class="q-val ok" id="draw-linux-saude"><?= htmlspecialchars($linux['recursos']['saude_disco']) ?></span>
-                    </div>
-                </div>
-
-                <!-- ARMAZENAMENTO PRINCIPAL (PARTIÇÃO RAIZ /) -->
-                <?php $raiz = $linux['sistemas_arquivos'][0] ?? null; ?>
-                <div class="main-storage-box">
-                    <div class="storage-head">
-                        <span class="storage-title">
-                            <strong>Armazenamento Partição (/)</strong> — <?= htmlspecialchars($raiz['label'] ?? 'ubuntu-lv') ?>
-                        </span>
-                        <span class="storage-pct mono <?= $raiz['saude']['classe'] ?? 'normal' ?>" id="linux-raiz-pct">
-                            <?= isset($raiz['pct']) ? number_format($raiz['pct'], 1, ',', '.') : '0' ?>%
-                        </span>
-                    </div>
-
-                    <div class="storage-stats">
-                        <div>
-                            <span class="s-lbl">Total</span>
-                            <span class="s-num mono" id="linux-raiz-tot"><?= $raiz['total_gb'] ?? '0 GB' ?></span>
-                        </div>
-                        <div>
-                            <span class="s-lbl">Usado</span>
-                            <span class="s-num mono" id="linux-raiz-usa"><?= $raiz['usado_gb'] ?? '0 GB' ?></span>
-                        </div>
-                        <div>
-                            <span class="s-lbl">Livre</span>
-                            <span class="s-num mono livre" id="linux-raiz-liv"><?= $raiz['livre_gb'] ?? '0 GB' ?></span>
-                        </div>
-                    </div>
-
-                    <div class="storage-bar">
-                        <div class="storage-bar-fill <?= $raiz['saude']['classe'] ?? 'normal' ?>" id="linux-raiz-bar" style="width: <?= number_format($raiz['pct'] ?? 0, 1, '.', '') ?>%"></div>
-                    </div>
-                </div>
-
-                <!-- INFORMATIVO SOBRE A QUANTIDADE TOTAL DO DISCO (PADRÃO HARMONIZADO) -->
-                <div class="quick-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2px;">
-                    <div class="quick-metric">
-                        <span class="q-label">Disco Total (SDA)</span>
-                        <span class="q-val mono" id="draw-linux-total" style="font-size: 11px; color: var(--ink);">Disco SDA: <?= $linux['disco_fisico']['total_gb'] ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Modelo & Pool Livre</span>
-                        <span class="q-val mono ok" style="font-size: 10px;"><?= htmlspecialchars($linux['disco_fisico']['modelo']) ?> • <?= $linux['lvm']['livre_gb'] ?? '212,7 GB' ?> Livre</span>
-                    </div>
-                </div>
-
-                <div style="font-size: 9px; color: var(--ink-muted); padding-top: 1px;">
-                    💡 <em>Notebook Servidor Linux (hostname: <code><?= htmlspecialchars($linux['recursos']['hostname']) ?></code>). Coleta em tempo real.</em>
-                </div>
-            </div>
-
-            <!-- =========================================================
-                 4. CARD COMPACTO: WINDOWS
-                 ========================================================= -->
-            <div class="compact-card" id="card-windows">
-                <div class="card-timeout-bar" aria-hidden="true"></div>
-                <div class="card-top">
-                    <div class="card-brand">
-                        <div class="brand-icon-box win-brand" title="Notebook Estação Windows">
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="4" width="18" height="12" rx="2"></rect>
-                                <line x1="2" y1="20" x2="22" y2="20"></line>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3>Windows</h3>
-                            <span class="card-sub">Notebook • Windows 10/11</span>
-                        </div>
-                    </div>
-                    <div class="card-top-right">
-                        <span class="pill-status <?= $windows['status_classe'] ?? ($windows['ativo_online'] ? 'ok' : 'warn') ?>" id="win-pill-status">
-                            <span class="ponto-pulsar"></span>
-                            <span id="win-texto-status"><?= htmlspecialchars($windows['status_texto'] ?? ($windows['ativo_online'] ? 'Online' : 'Conectado')) ?></span>
-                        </span>
-                        <button class="btn-card-close" onclick="fecharTodosPaineis()" title="Fechar">✕</button>
-                    </div>
-                </div>
-
-                <!-- 4 MÉTRICAS-CHAVE EM GRID 2x2 (PADRÃO HARMONIZADO) -->
-                <div class="quick-grid">
-                    <div class="quick-metric">
-                        <span class="q-label">Endereço IP</span>
-                        <span class="q-val mono" id="draw-win-ip" style="color: var(--brand);"><?= htmlspecialchars($windows['ip']) ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Tempo de Atividade</span>
-                        <span class="q-val mono" id="draw-win-uptime" style="color: var(--brand);"><?= htmlspecialchars($windows['recursos']['uptime'] ?? 'Ativo') ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Memória RAM</span>
-                        <span class="q-val mono" id="draw-win-ram"><?= htmlspecialchars($windows['recursos']['mem_resumo'] ?? '—') ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Saúde Disco</span>
-                        <span class="q-val ok" id="draw-win-saude"><?= htmlspecialchars($windows['recursos']['saude_disco'] ?? '100% Saudável (Running)') ?></span>
-                    </div>
-                </div>
-
-                <!-- ARMAZENAMENTO PRINCIPAL (PARTIÇÃO C:) -->
-                <?php $winDisco = $windows['discos'][0] ?? null; ?>
-                <div id="lista-volumes-windows" style="display: flex; flex-direction: column; gap: 4px;">
-                    <?php if ($winDisco): ?>
-                        <div class="main-storage-box">
-                            <div class="storage-head">
-                                <span class="storage-title">
-                                    <strong>Armazenamento Partição (<?= htmlspecialchars($winDisco['unidade']) ?>)</strong> — <?= htmlspecialchars($winDisco['rotulo']) ?>
-                                </span>
-                                <span class="storage-pct mono <?= $winDisco['situacao']['classe'] ?>" id="win-c-pct">
-                                    <?= number_format($winDisco['pct'], 1, ',', '.') ?>%
-                                </span>
-                            </div>
-
-                            <div class="storage-stats">
-                                <div>
-                                    <span class="s-lbl">Total</span>
-                                    <span class="s-num mono" id="win-c-tot"><?= $winDisco['total_gb'] ?></span>
+                    <!-- =========================================================
+                         CARD 1: SISTEMA LINUX (NOTEBOOK SERVIDOR)
+                         ========================================================= -->
+                    <div class="card-container" id="container-linux" data-index="0" onclick="carouselGoTo(0)">
+                        <div class="card compact-card" id="card-linux">
+                            <div class="card-timeout-bar" aria-hidden="true"></div>
+                            <div class="card-top">
+                                <div class="card-brand">
+                                    <div class="brand-icon-box linux-brand" title="Sistema linux">
+                                        <svg viewBox="0 0 24 24" width="20" height="20" fill="#FCC624">
+                                            <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2z"/>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h2 class="card-brand-title">Sistema linux</h2>
+                                        <span class="card-sub">Notebook Servidor • Ubuntu 24.04 LTS</span>
+                                    </div>
                                 </div>
-                                <div>
-                                    <span class="s-lbl">Usado</span>
-                                    <span class="s-num mono" id="win-c-usa"><?= $winDisco['usado_gb'] ?></span>
-                                </div>
-                                <div>
-                                    <span class="s-lbl">Livre</span>
-                                    <span class="s-num mono livre" id="win-c-liv"><?= $winDisco['livre_gb'] ?></span>
+                                <div class="card-top-right">
+                                    <span class="pill-status ok" id="linux-pill-status">
+                                        <span class="ponto-pulsar"></span>
+                                        <span id="linux-texto-status">Online</span>
+                                    </span>
                                 </div>
                             </div>
 
-                            <div class="storage-bar">
-                                <div class="storage-bar-fill <?= $winDisco['situacao']['classe'] ?>" id="win-c-bar" style="width: <?= number_format($winDisco['pct'], 1, '.', '') ?>%"></div>
+                            <!-- 4 MÉTRICAS-CHAVE EM GRID 2x2 (PADRÃO HARMONIZADO) -->
+                            <div class="quick-grid">
+                                <div class="quick-metric">
+                                    <span class="q-label">Endereço IP</span>
+                                    <span class="q-val mono" id="draw-linux-ip" style="color: var(--brand);"><?= htmlspecialchars($linux['ip']) ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Tempo de Atividade</span>
+                                    <span class="q-val mono" id="draw-linux-uptime" style="color: var(--brand);"><?= htmlspecialchars($linux['recursos']['uptime']) ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Memória RAM</span>
+                                    <span class="q-val mono" id="draw-linux-ram"><?= $linux['recursos']['mem_usada_gb'] ?> / <?= $linux['recursos']['mem_total_gb'] ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Saúde Disco</span>
+                                    <span class="q-val ok" id="draw-linux-saude"><?= htmlspecialchars($linux['recursos']['saude_disco']) ?></span>
+                                </div>
+                            </div>
+
+                            <!-- ARMAZENAMENTO PRINCIPAL (PARTIÇÃO RAIZ /) -->
+                            <?php $raiz = $linux['sistemas_arquivos'][0] ?? null; ?>
+                            <div class="main-storage-box">
+                                <div class="storage-head">
+                                    <span class="storage-title">
+                                        <strong>Armazenamento Partição (/)</strong> — <?= htmlspecialchars($raiz['label'] ?? 'ubuntu-lv') ?>
+                                    </span>
+                                    <span class="storage-pct mono <?= $raiz['saude']['classe'] ?? 'normal' ?>" id="linux-raiz-pct">
+                                        <?= isset($raiz['pct']) ? number_format($raiz['pct'], 1, ',', '.') : '0' ?>%
+                                    </span>
+                                </div>
+
+                                <div class="storage-stats">
+                                    <div>
+                                        <span class="s-lbl">Total</span>
+                                        <span class="s-num mono" id="linux-raiz-tot"><?= $raiz['total_gb'] ?? '0 GB' ?></span>
+                                    </div>
+                                    <div>
+                                        <span class="s-lbl">Usado</span>
+                                        <span class="s-num mono" id="linux-raiz-usa"><?= $raiz['usado_gb'] ?? '0 GB' ?></span>
+                                    </div>
+                                    <div>
+                                        <span class="s-lbl">Livre</span>
+                                        <span class="s-num mono livre" id="linux-raiz-liv"><?= $raiz['livre_gb'] ?? '0 GB' ?></span>
+                                    </div>
+                                </div>
+
+                                <div class="storage-bar">
+                                    <div class="storage-bar-fill <?= $raiz['saude']['classe'] ?? 'normal' ?>" id="linux-raiz-bar" style="width: <?= number_format($raiz['pct'] ?? 0, 1, '.', '') ?>%"></div>
+                                </div>
+                            </div>
+
+                            <!-- INFORMATIVO SOBRE A QUANTIDADE TOTAL DO DISCO (PADRÃO HARMONIZADO) -->
+                            <div class="quick-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2px;">
+                                <div class="quick-metric">
+                                    <span class="q-label">Disco Total (SDA)</span>
+                                    <span class="q-val mono" id="draw-linux-total" style="font-size: 11px; color: var(--ink);">Disco SDA: <?= $linux['disco_fisico']['total_gb'] ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Modelo & Pool Livre</span>
+                                    <span class="q-val mono ok" style="font-size: 10px;"><?= htmlspecialchars($linux['disco_fisico']['modelo']) ?> • <?= $linux['lvm']['livre_gb'] ?? '212,7 GB' ?> Livre</span>
+                                </div>
+                            </div>
+
+                            <div class="card-footer-ping">
+                                Ping do sistema: <span id="card-ping-linux" class="card-ping-val <?= htmlspecialchars($pingsIniciais['linux']['classe'] ?? 'ping-verde') ?>"><?= htmlspecialchars($pingsIniciais['linux']['texto'] ?? '1ms') ?></span>
                             </div>
                         </div>
-                    <?php else: ?>
-                        <div style="padding: 14px; text-align: center; color: var(--ink-muted); font-size: 11px; background: var(--bg-secundario); border: 1px solid var(--borda); border-radius: 6px;">
-                            Aguardando telemetria do script PowerShell do Windows
+                    </div>
+
+                    <!-- =========================================================
+                         CARD 2: SISTEMA WINDOWS (NOTEBOOK ESTAÇÃO)
+                         ========================================================= -->
+                    <div class="card-container" id="container-windows" data-index="1" onclick="carouselGoTo(1)">
+                        <div class="card compact-card" id="card-windows">
+                            <div class="card-timeout-bar" aria-hidden="true"></div>
+                            <div class="card-top">
+                                <div class="card-brand">
+                                    <div class="brand-icon-box win-brand" title="Sistema Windows">
+                                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="4" width="18" height="12" rx="2"></rect>
+                                            <line x1="2" y1="20" x2="22" y2="20"></line>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h2 class="card-brand-title">Sistema Windows</h2>
+                                        <span class="card-sub">Notebook • Windows 10/11</span>
+                                    </div>
+                                </div>
+                                <div class="card-top-right">
+                                    <span class="pill-status <?= $windows['status_classe'] ?? ($windows['ativo_online'] ? 'ok' : 'warn') ?>" id="win-pill-status">
+                                        <span class="ponto-pulsar"></span>
+                                        <span id="win-texto-status"><?= htmlspecialchars($windows['status_texto'] ?? ($windows['ativo_online'] ? 'Online' : 'Conectado')) ?></span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- 4 MÉTRICAS-CHAVE EM GRID 2x2 (PADRÃO HARMONIZADO) -->
+                            <div class="quick-grid">
+                                <div class="quick-metric">
+                                    <span class="q-label">Endereço IP</span>
+                                    <span class="q-val mono" id="draw-win-ip" style="color: var(--brand);"><?= htmlspecialchars($windows['ip']) ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Tempo de Atividade</span>
+                                    <span class="q-val mono" id="draw-win-uptime" style="color: var(--brand);"><?= htmlspecialchars($windows['recursos']['uptime'] ?? 'Ativo') ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Memória RAM</span>
+                                    <span class="q-val mono" id="draw-win-ram"><?= htmlspecialchars($windows['recursos']['mem_resumo'] ?? '—') ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Saúde Disco</span>
+                                    <span class="q-val ok" id="draw-win-saude"><?= htmlspecialchars($windows['recursos']['saude_disco'] ?? '100% Saudável (Running)') ?></span>
+                                </div>
+                            </div>
+
+                            <!-- ARMAZENAMENTO PRINCIPAL (PARTIÇÃO C:) -->
+                            <?php $winDisco = $windows['discos'][0] ?? null; ?>
+                            <div id="lista-volumes-windows" style="display: flex; flex-direction: column; gap: 4px;">
+                                <?php if ($winDisco): ?>
+                                    <div class="main-storage-box">
+                                        <div class="storage-head">
+                                            <span class="storage-title">
+                                                <strong>Armazenamento Partição (<?= htmlspecialchars($winDisco['unidade']) ?>)</strong> — <?= htmlspecialchars($winDisco['rotulo']) ?>
+                                            </span>
+                                            <span class="storage-pct mono <?= $winDisco['situacao']['classe'] ?>" id="win-c-pct">
+                                                <?= number_format($winDisco['pct'], 1, ',', '.') ?>%
+                                            </span>
+                                        </div>
+
+                                        <div class="storage-stats">
+                                            <div>
+                                                <span class="s-lbl">Total</span>
+                                                <span class="s-num mono" id="win-c-tot"><?= $winDisco['total_gb'] ?></span>
+                                            </div>
+                                            <div>
+                                                <span class="s-lbl">Usado</span>
+                                                <span class="s-num mono" id="win-c-usa"><?= $winDisco['usado_gb'] ?></span>
+                                            </div>
+                                            <div>
+                                                <span class="s-lbl">Livre</span>
+                                                <span class="s-num mono livre" id="win-c-liv"><?= $winDisco['livre_gb'] ?></span>
+                                            </div>
+                                        </div>
+
+                                        <div class="storage-bar">
+                                            <div class="storage-bar-fill <?= $winDisco['situacao']['classe'] ?>" id="win-c-bar" style="width: <?= number_format($winDisco['pct'], 1, '.', '') ?>%"></div>
+                                        </div>
+                                    </div>
+                                <?php else: ?>
+                                    <div style="padding: 14px; text-align: center; color: var(--ink-muted); font-size: 11px; background: var(--bg-secundario); border: 1px solid var(--borda); border-radius: 6px;">
+                                        Aguardando telemetria do script PowerShell do Windows
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- INFORMATIVO SOBRE A QUANTIDADE TOTAL DO DISCO (PADRÃO HARMONIZADO) -->
+                            <div class="quick-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2px;">
+                                <div class="quick-metric">
+                                    <span class="q-label">Disco Total (C:)</span>
+                                    <span class="q-val mono" id="win-disco-total" style="font-size: 11px; color: var(--ink);">Disco C: <?= htmlspecialchars($windows['recursos']['disco_capacidade_gb'] ?? '111,8 GB') ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Modelo & Sincronização</span>
+                                    <span class="q-val mono ok" id="win-disco-modelo" style="font-size: 10px;"><?= htmlspecialchars($windows['recursos']['disco_modelo'] ?? 'KINGSTON SA400S37120G') ?> • Sincronizado</span>
+                                </div>
+                            </div>
+
+                            <div class="card-footer-ping">
+                                Ping do sistema: <span id="card-ping-windows" class="card-ping-val <?= htmlspecialchars($pingsIniciais['windows']['classe'] ?? 'ping-verde') ?>"><?= htmlspecialchars($pingsIniciais['windows']['texto'] ?? '2ms') ?></span>
+                            </div>
                         </div>
-                    <?php endif; ?>
+                    </div>
+
+                    <!-- =========================================================
+                         CARD 3: CONSOLE PS4 (PLAYSTATION 4 FAT ORIGINAL)
+                         ========================================================= -->
+                    <div class="card-container" id="container-ps4" data-index="2" onclick="carouselGoTo(2)">
+                        <div class="card compact-card" id="card-ps4">
+                            <div class="card-timeout-bar" aria-hidden="true"></div>
+                            <div class="card-top">
+                                <div class="card-brand">
+                                    <div class="brand-icon-box ps4-brand" title="Console PS4">
+                                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#0070D1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <line x1="6" y1="12" x2="10" y2="12"></line>
+                                            <line x1="8" y1="10" x2="8" y2="14"></line>
+                                            <line x1="15" y1="13" x2="15.01" y2="13"></line>
+                                            <line x1="18" y1="11" x2="18.01" y2="11"></line>
+                                            <rect x="2" y="6" width="20" height="12" rx="6"></rect>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h2 class="card-brand-title">Console PS4</h2>
+                                        <span class="card-sub">Console Videogame • PS4 Fat Original</span>
+                                    </div>
+                                </div>
+                                <div class="card-top-right">
+                                    <span class="pill-status <?= $ps4['online'] ? ($ps4['ddp_confirmado'] ? 'ok' : 'warn') : 'critico' ?>" id="ps4-pill-status">
+                                        <span class="ponto-pulsar"></span>
+                                        <span id="ps4-texto-status"><?= $ps4['online'] ? ($ps4['ddp_confirmado'] ? 'Online (Ativo)' : 'Conectado') : 'Offline' ?></span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- 1. IP & ÚLTIMA VERIFICAÇÃO EM GRID 2x2 -->
+                            <div class="quick-grid">
+                                <div class="quick-metric">
+                                    <span class="q-label">Endereço IP</span>
+                                    <span class="q-val mono" style="color: var(--brand);"><?= htmlspecialchars($ps4['ip']) ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Última Verificação</span>
+                                    <span class="q-val mono" id="ps4-ultima-verif" style="color: var(--brand);"><?= $ps4['ultima_verificacao'] ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Latência (Ping)</span>
+                                    <span class="q-val mono" id="ps4-ping-val" style="color: var(--brand);"><?= $ps4['ping_ms'] ?? 'Timeout' ?></span>
+                                </div>
+                                <div class="quick-metric">
+                                    <span class="q-label">Identificação Console</span>
+                                    <span class="q-val mono" id="ps4-host-val"><?= htmlspecialchars($ps4['host_name']) ?> (<?= htmlspecialchars($ps4['host_id']) ?>)</span>
+                                </div>
+                            </div>
+
+                            <!-- 2. ARMAZENAMENTO DO PS4 (FAT ORIGINAL - 500 GB HDD) -->
+                            <div class="main-storage-box">
+                                <div class="storage-head">
+                                    <span class="storage-title">
+                                        <strong>Armazenamento Interno</strong> — HDD 500 GB
+                                    </span>
+                                    <span class="storage-pct mono normal" style="font-size: 10px;">
+                                        500 GB HDD
+                                    </span>
+                                </div>
+
+                                <div class="storage-stats">
+                                    <div>
+                                        <span class="s-lbl">Capacidade</span>
+                                        <span class="s-num mono">500,0 GB</span>
+                                    </div>
+                                    <div>
+                                        <span class="s-lbl">Partição Jogos</span>
+                                        <span class="s-num mono">~408 GB</span>
+                                    </div>
+                                    <div>
+                                        <span class="s-lbl">Formato</span>
+                                        <span class="s-num mono livre">PlayStation OS</span>
+                                    </div>
+                                </div>
+
+                                <div class="storage-bar">
+                                    <div class="storage-bar-fill normal" style="width: 100%"></div>
+                                </div>
+                            </div>
+
+                            <!-- 3. ESTADO OPERACIONAL DO CONSOLE -->
+                            <div class="main-storage-box" style="margin-top: 4px;">
+                                <div class="storage-head">
+                                    <span class="storage-title">
+                                        <strong>Estado Operacional</strong>
+                                    </span>
+                                    <span class="storage-pct mono <?= $ps4['estado_classe'] ?>" id="ps4-estado-tag" style="font-size: 10px;">
+                                        <?= $ps4['ddp_confirmado'] ? 'Confirmado via DDP' : ($ps4['online'] ? 'Detectado na Rede' : 'Inacessível') ?>
+                                    </span>
+                                </div>
+
+                                <div style="background: rgba(0, 0, 0, 0.35); padding: 5px 8px; border-radius: 5px; display: flex; flex-direction: column; gap: 3px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span style="font-size: 9px; color: var(--ink-muted); text-transform: uppercase;">Atividade Atual:</span>
+                                        <span id="ps4-app-nome" style="font-size: 11px; font-weight: 700; color: #38BDF8;">
+                                            <?= !empty($ps4['app_ativa']) ? htmlspecialchars($ps4['app_ativa']) : ($ps4['online'] ? 'Menu do Sistema / Em Espera' : 'Desconectado') ?>
+                                        </span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--ink-sec);">
+                                        <span>Title ID: <strong class="mono" id="ps4-app-id"><?= !empty($ps4['app_titleid']) ? htmlspecialchars($ps4['app_titleid']) : 'N/A' ?></strong></span>
+                                        <span>Firmware: <strong class="mono" id="ps4-sys-ver"><?= !empty($ps4['sistema_versao']) ? htmlspecialchars($ps4['sistema_versao']) : 'N/A' ?></strong></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 4. CONTROLES DO CONSOLE (LIGAR / REPOUSO) -->
+                            <div style="display: flex; flex-direction: column; gap: 5px; background: var(--bg-secundario); padding: 6px 8px; border-radius: 6px; border: 1px solid var(--borda);">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="font-size: 10px; font-weight: 600; color: var(--ink);">Controles do Console (Rede Local)</span>
+                                    <span style="font-size: 9px; color: var(--ink-muted);">MAC: <code class="mono"><?= htmlspecialchars($ps4['mac']) ?></code></span>
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                                    <button type="button" class="btn-ps4-action btn-ps4-wake" onclick="acionarPS4('wake')" id="btn-ps4-wake" title="Ligar o console a partir do modo de repouso (Magic Packet + DDP Wake)">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                        </svg>
+                                        <span id="btn-ps4-wake-text">Ligar PS4</span>
+                                    </button>
+
+                                    <button type="button" class="btn-ps4-action btn-ps4-standby" onclick="acionarPS4('standby')" id="btn-ps4-standby" title="Colocar em Modo de Repouso via protocolo Second Screen autenticado">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                                        </svg>
+                                        <span id="btn-ps4-standby-text">Colocar em repouso</span>
+                                    </button>
+                                </div>
+
+                                <!-- FEEDBACK DE STATUS DAS AÇÕES DO PS4 -->
+                                <div id="ps4-action-feedback" style="display: none; font-size: 9.5px; padding: 5px 8px; border-radius: 5px; line-height: 1.3;"></div>
+
+                                <!-- CAMPO DE REGISTRO / PAREAMENTO DE CÓDIGO (PIN) DO PS4 -->
+                                <div id="ps4-pin-container" style="display: none; margin-top: 2px; padding: 7px; background: rgba(0, 112, 209, 0.08); border: 1px solid rgba(0, 112, 209, 0.25); border-radius: 5px;">
+                                    <div style="font-size: 10px; font-weight: 600; color: #38BDF8; margin-bottom: 3px;">Pareamento de Código (PIN) do Console</div>
+                                    <div style="font-size: 9px; color: var(--ink-muted); margin-bottom: 6px; line-height: 1.25;">
+                                        Digite o código de 8 dígitos exibido na tela da sua TV (Adicionar Dispositivo) para autorizar e colocar em repouso:
+                                    </div>
+                                    <div style="display: flex; gap: 5px;">
+                                        <input type="text" id="ps4-pin-input" placeholder="Ex: 39822790" maxlength="8" style="flex: 1; background: var(--bg-card); border: 1px solid var(--borda); color: var(--ink); border-radius: 4px; padding: 4px 6px; font-size: 11px; font-family: var(--font-mono); text-align: center; letter-spacing: 2px;">
+                                        <button type="button" id="btn-ps4-pair" onclick="acionarPS4('standby', true)" style="background: #0070D1; color: #fff; border: none; border-radius: 4px; padding: 4px 10px; font-size: 10px; font-weight: 600; cursor: pointer;">Conectar</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card-footer-ping">
+                                Ping do sistema: <span id="card-ping-ps4" class="card-ping-val <?= htmlspecialchars($pingsIniciais['ps4']['classe'] ?? 'ping-vermelho') ?>"><?= htmlspecialchars($pingsIniciais['ps4']['texto'] ?? 'Offline') ?></span>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
 
-                <!-- INFORMATIVO SOBRE A QUANTIDADE TOTAL DO DISCO (PADRÃO HARMONIZADO) -->
-                <div class="quick-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2px;">
-                    <div class="quick-metric">
-                        <span class="q-label">Disco Total (C:)</span>
-                        <span class="q-val mono" id="win-disco-total" style="font-size: 11px; color: var(--ink);">Disco C: <?= htmlspecialchars($windows['recursos']['disco_capacidade_gb'] ?? '111,8 GB') ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Modelo & Sincronização</span>
-                        <span class="q-val mono ok" id="win-disco-modelo" style="font-size: 10px;"><?= htmlspecialchars($windows['recursos']['disco_modelo'] ?? 'KINGSTON SA400S37120G') ?> • Sincronizado</span>
-                    </div>
-                </div>
-
-                <div style="font-size: 9px; color: var(--ink-muted); padding-top: 1px;">
-                    💡 <em>Notebook Windows conectado via rede local (192.168.18.19). Telemetria PowerShell.</em>
-                </div>
-            </div>
-
-            <!-- =========================================================
-                 5. CARD COMPACTO: PLAYSTATION 4 (PS4 FAT ORIGINAL)
-                 ========================================================= -->
-            <div class="compact-card" id="card-ps4">
-                <div class="card-timeout-bar" aria-hidden="true"></div>
-                <div class="card-top">
-                    <div class="card-brand">
-                        <div class="brand-icon-box ps4-brand" title="Console de Videogame PS4">
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#0070D1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="6" y1="12" x2="10" y2="12"></line>
-                                <line x1="8" y1="10" x2="8" y2="14"></line>
-                                <line x1="15" y1="13" x2="15.01" y2="13"></line>
-                                <line x1="18" y1="11" x2="18.01" y2="11"></line>
-                                <rect x="2" y="6" width="20" height="12" rx="6"></rect>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3>PlayStation 4 Fat</h3>
-                            <span class="card-sub">Console Videogame • PS4 Fat Original</span>
-                        </div>
-                    </div>
-                    <div class="card-top-right">
-                        <span class="pill-status <?= $ps4['online'] ? ($ps4['ddp_confirmado'] ? 'ok' : 'warn') : 'critico' ?>" id="ps4-pill-status">
-                            <span class="ponto-pulsar"></span>
-                            <span id="ps4-texto-status"><?= $ps4['online'] ? ($ps4['ddp_confirmado'] ? 'Online (Ativo)' : 'Conectado') : 'Offline' ?></span>
-                        </span>
-                        <button class="btn-card-close" onclick="fecharTodosPaineis()" title="Fechar">✕</button>
-                    </div>
-                </div>
-
-                <!-- 1. IP & ÚLTIMA VERIFICAÇÃO EM GRID 2x2 -->
-                <div class="quick-grid">
-                    <div class="quick-metric">
-                        <span class="q-label">Endereço IP</span>
-                        <span class="q-val mono" style="color: var(--brand);"><?= htmlspecialchars($ps4['ip']) ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Última Verificação</span>
-                        <span class="q-val mono" id="ps4-ultima-verif" style="color: var(--brand);"><?= $ps4['ultima_verificacao'] ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Latência (Ping)</span>
-                        <span class="q-val mono" id="ps4-ping-val" style="color: var(--brand);"><?= $ps4['ping_ms'] ?? 'Timeout' ?></span>
-                    </div>
-                    <div class="quick-metric">
-                        <span class="q-label">Identificação Console</span>
-                        <span class="q-val mono" id="ps4-host-val"><?= htmlspecialchars($ps4['host_name']) ?> (<?= htmlspecialchars($ps4['host_id']) ?>)</span>
-                    </div>
-                </div>
-
-                <!-- 2. ARMAZENAMENTO DO PS4 (FAT ORIGINAL - 500 GB HDD) -->
-                <div class="main-storage-box">
-                    <div class="storage-head">
-                        <span class="storage-title">
-                            <strong>Armazenamento Interno</strong> — HDD 500 GB
-                        </span>
-                        <span class="storage-pct mono normal" style="font-size: 10px;">
-                            500 GB HDD
-                        </span>
-                    </div>
-
-                    <div class="storage-stats">
-                        <div>
-                            <span class="s-lbl">Capacidade</span>
-                            <span class="s-num mono">500,0 GB</span>
-                        </div>
-                        <div>
-                            <span class="s-lbl">Partição Jogos</span>
-                            <span class="s-num mono">~408 GB</span>
-                        </div>
-                        <div>
-                            <span class="s-lbl">Formato</span>
-                            <span class="s-num mono livre">PlayStation OS</span>
-                        </div>
-                    </div>
-
-                    <div class="storage-bar">
-                        <div class="storage-bar-fill normal" style="width: 100%"></div>
-                    </div>
-                </div>
-
-                <!-- 3. ESTADO OPERACIONAL DO CONSOLE -->
-                <div class="main-storage-box" style="margin-top: 4px;">
-                    <div class="storage-head">
-                        <span class="storage-title">
-                            <strong>Estado Operacional</strong>
-                        </span>
-                        <span class="storage-pct mono <?= $ps4['estado_classe'] ?>" id="ps4-estado-tag" style="font-size: 10px;">
-                            <?= $ps4['ddp_confirmado'] ? 'Confirmado via DDP' : ($ps4['online'] ? 'Detectado na Rede' : 'Inacessível') ?>
-                        </span>
-                    </div>
-
-                    <div style="background: rgba(0, 0, 0, 0.35); padding: 5px 8px; border-radius: 5px; display: flex; flex-direction: column; gap: 3px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 9px; color: var(--ink-muted); text-transform: uppercase;">Atividade Atual:</span>
-                            <span id="ps4-app-nome" style="font-size: 11px; font-weight: 700; color: #38BDF8;">
-                                <?= !empty($ps4['app_ativa']) ? htmlspecialchars($ps4['app_ativa']) : ($ps4['online'] ? 'Menu do Sistema / Em Espera' : 'Desconectado') ?>
-                            </span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--ink-sec);">
-                            <span>Title ID: <strong class="mono" id="ps4-app-id"><?= !empty($ps4['app_titleid']) ? htmlspecialchars($ps4['app_titleid']) : 'N/A' ?></strong></span>
-                            <span>Firmware: <strong class="mono" id="ps4-sys-ver"><?= !empty($ps4['sistema_versao']) ? htmlspecialchars($ps4['sistema_versao']) : 'N/A' ?></strong></span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 4. CONTROLES DO CONSOLE (LIGAR / REPOUSO) -->
-                <div style="display: flex; flex-direction: column; gap: 5px; background: var(--bg-secundario); padding: 6px 8px; border-radius: 6px; border: 1px solid var(--borda);">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 10px; font-weight: 600; color: var(--ink);">Controles do Console (Rede Local)</span>
-                        <span style="font-size: 9px; color: var(--ink-muted);">MAC: <code class="mono"><?= htmlspecialchars($ps4['mac']) ?></code></span>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                        <button type="button" class="btn-ps4-action btn-ps4-wake" onclick="acionarPS4('wake')" id="btn-ps4-wake" title="Ligar o console a partir do modo de repouso (Magic Packet + DDP Wake)">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                            </svg>
-                            <span id="btn-ps4-wake-text">Ligar PS4</span>
-                        </button>
-
-                        <button type="button" class="btn-ps4-action btn-ps4-standby" onclick="acionarPS4('standby')" id="btn-ps4-standby" title="Colocar em Modo de Repouso via protocolo Second Screen autenticado">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                            </svg>
-                            <span id="btn-ps4-standby-text">Colocar em repouso</span>
-                        </button>
-                    </div>
-
-                    <!-- FEEDBACK DE STATUS DAS AÇÕES DO PS4 -->
-                    <div id="ps4-action-feedback" style="display: none; font-size: 9.5px; padding: 5px 8px; border-radius: 5px; line-height: 1.3;"></div>
-
-                    <!-- CAMPO DE REGISTRO / PAREAMENTO DE CÓDIGO (PIN) DO PS4 -->
-                    <div id="ps4-pin-container" style="display: none; margin-top: 2px; padding: 7px; background: rgba(0, 112, 209, 0.08); border: 1px solid rgba(0, 112, 209, 0.25); border-radius: 5px;">
-                        <div style="font-size: 10px; font-weight: 600; color: #38BDF8; margin-bottom: 3px;">Pareamento de Código (PIN) do Console</div>
-                        <div style="font-size: 9px; color: var(--ink-muted); margin-bottom: 6px; line-height: 1.25;">
-                            Digite o código de 8 dígitos exibido na tela da sua TV (Adicionar Dispositivo) para autorizar e colocar em repouso:
-                        </div>
-                        <div style="display: flex; gap: 5px;">
-                            <input type="text" id="ps4-pin-input" placeholder="Ex: 39822790" maxlength="8" style="flex: 1; background: var(--bg-card); border: 1px solid var(--borda); color: var(--ink); border-radius: 4px; padding: 4px 6px; font-size: 11px; font-family: var(--font-mono); text-align: center; letter-spacing: 2px;">
-                            <button type="button" id="btn-ps4-pair" onclick="acionarPS4('standby', true)" style="background: #0070D1; color: #fff; border: none; border-radius: 4px; padding: 4px 10px; font-size: 10px; font-weight: 600; cursor: pointer;">Conectar</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="font-size: 9px; color: var(--ink-muted); padding-top: 1px;">
-                    💡 <em>PlayStation 4 Fat original conectado na rede local (192.168.18.162).</em>
-                </div>
+                <!-- BOTÃO NAVEGAÇÃO PASSAR PARA DIREITA -->
+                <button type="button" class="nav right" id="carousel-nav-next" onclick="carouselMove(1)" aria-label="Passar para a direita" title="Passar para a direita">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                </button>
             </div>
         </section>
     </main>
@@ -2829,39 +2933,75 @@ $temAlerta20GB = !empty($alertasEspaco);
                 });
             }
 
-            function selectDevice(secao, toggleCard = true) {
-                if (!stack) return;
-                const btn = stack.querySelector(`.device-btn[data-section="${secao}"]`);
-                if (!btn) return;
+            const CARDS_COUNT = 3;
+            const SECTION_KEYS = ['linux', 'windows', 'ps4'];
+            let activeIndex = 0; // Inicia em Linux (0)
 
-                // Move o botao selecionado para o topo da lista de forma animada e suave
-                animateReorder(btn);
+            function updateCarousel(newActive) {
+                if (newActive < 0) newActive = 0;
+                if (newActive >= CARDS_COUNT) newActive = CARDS_COUNT - 1;
+                activeIndex = newActive;
+                activeDevice = SECTION_KEYS[activeIndex];
 
-                // Atualiza estados visuais dos botoes
-                stack.querySelectorAll('.device-btn').forEach(b => {
-                    const isActive = b.dataset.section === secao;
-                    b.classList.toggle('is-active', isActive);
-                    b.setAttribute('aria-pressed', String(isActive));
+                const containers = document.querySelectorAll('.carousel .card-container');
+                containers.forEach((cardEl, i) => {
+                    const offset = (activeIndex - i) / 3;
+                    const direction = Math.sign(activeIndex - i);
+                    const absOffset = Math.abs(activeIndex - i) / 3;
+                    const isActive = i === activeIndex ? 1 : 0;
+
+                    cardEl.style.setProperty('--active', isActive);
+                    cardEl.style.setProperty('--offset', offset);
+                    cardEl.style.setProperty('--direction', direction);
+                    cardEl.style.setProperty('--abs-offset', absOffset);
+                    cardEl.style.zIndex = 10 - Math.round(absOffset * 10);
+                    cardEl.style.opacity = Math.abs(activeIndex - i) >= 3 ? '0' : '1';
+                    cardEl.style.display = Math.abs(activeIndex - i) > 3 ? 'none' : 'block';
                 });
 
-                activeDevice = secao;
-                if (hidebarLabel) {
-                    hidebarLabel.textContent = secao.toUpperCase();
+                // Atualiza botões de navegação (voltar para esquerda / passar para direita)
+                const navLeft = document.getElementById('carousel-nav-prev');
+                const navRight = document.getElementById('carousel-nav-next');
+                if (navLeft) {
+                    navLeft.classList.toggle('is-disabled', activeIndex <= 0);
+                    navLeft.style.display = activeIndex > 0 ? 'flex' : 'none';
+                }
+                if (navRight) {
+                    navRight.classList.toggle('is-disabled', activeIndex >= CARDS_COUNT - 1);
+                    navRight.style.display = activeIndex < CARDS_COUNT - 1 ? 'flex' : 'none';
                 }
 
-                // No mobile, recolhe a hidebar suavemente para focar a visualizacao no card de dados
+                // Sincroniza estado visual do botão na sidebar 'Sistemas e Hosts'
+                const currentSection = SECTION_KEYS[activeIndex];
+                if (stack) {
+                    stack.querySelectorAll('.device-btn').forEach(btn => {
+                        const isSelected = btn.dataset.section === currentSection;
+                        btn.classList.toggle('is-active', isSelected);
+                        btn.setAttribute('aria-pressed', String(isSelected));
+                    });
+                }
+                if (hidebarLabel) {
+                    hidebarLabel.textContent = currentSection.toUpperCase();
+                }
+
+                atualizarLuzRadar();
+            }
+
+            function carouselMove(delta) {
+                updateCarousel(activeIndex + delta);
+            }
+
+            function carouselGoTo(index) {
+                updateCarousel(index);
+            }
+
+            function selectDevice(secao) {
+                const idx = SECTION_KEYS.indexOf(secao);
+                if (idx !== -1) {
+                    updateCarousel(idx);
+                }
                 if (window.innerWidth <= 768 && networkSidebar && networkSidebar.classList.contains('hidebar-open')) {
                     toggleMobileHidebar(false);
-                }
-
-                if (toggleCard) {
-                    if (painelAberto === secao) {
-                        fecharPaineis();
-                    } else {
-                        abrirPainel(secao);
-                    }
-                } else if (painelAberto) {
-                    abrirPainel(secao);
                 }
             }
 
@@ -2870,75 +3010,18 @@ $temAlerta20GB = !empty($alertasEspaco);
                 const netHeader = document.getElementById('sidebar-net-header');
                 if (!radar) return;
 
-                if (!painelAberto) {
-                    // Bolinha do lado esquerdo em Sistemas e Hosts permanece verde por padrão
-                    radar.classList.remove('is-offline');
-                    radar.classList.add('is-online');
-                    if (netHeader) {
-                        netHeader.classList.remove('is-offline');
-                        netHeader.classList.remove('is-online');
-                    }
-                    return;
-                }
+                // Bolinha do lado esquerdo em Sistemas e Hosts permanece verde por padrão
+                radar.classList.remove('is-offline');
+                radar.classList.add('is-online');
 
-                const activeBtn = stack ? stack.querySelector(`.device-btn[data-section="${painelAberto}"]`) : null;
-                const isOnline = activeBtn ? activeBtn.classList.contains('host-online') : false;
-
-                radar.classList.toggle('is-online', isOnline);
-                radar.classList.toggle('is-offline', !isOnline);
                 if (netHeader) {
-                    netHeader.classList.toggle('is-online', isOnline);
-                    netHeader.classList.toggle('is-offline', !isOnline);
+                    netHeader.classList.remove('is-offline');
+                    netHeader.classList.remove('is-online');
                 }
-            }
-
-            function abrirPainel(secao) {
-                const stage = document.getElementById('painel-center-stage');
-                if (stage) stage.classList.add('card-is-active');
-                painelAberto = secao;
-
-                if (cardLinux) cardLinux.classList.toggle('is-visible', secao === 'linux');
-                if (cardWindows) cardWindows.classList.toggle('is-visible', secao === 'windows');
-                if (cardPs4) cardPs4.classList.toggle('is-visible', secao === 'ps4');
-
-                // Atualiza a luz do radar em 'Sistemas e Hosts'
-                atualizarLuzRadar();
-
-                // Reinicia a barra de progresso do timer de 40s
-                const activeCard = document.getElementById('card-' + secao);
-                if (activeCard) {
-                    const bar = activeCard.querySelector('.card-timeout-bar');
-                    if (bar) {
-                        bar.style.animation = 'none';
-                        void bar.offsetWidth;
-                        bar.style.animation = '';
-                    }
-                }
-
-                iniciarTimerAutoFechar();
             }
 
             function fecharPaineis() {
-                const stage = document.getElementById('painel-center-stage');
-                if (stage) stage.classList.remove('card-is-active');
-                pararTimerAutoFechar();
-                painelAberto = null;
-                activeDevice = null;
-
-                // Remove o estado is-active de todos os botões -> voltam a ficar cinzas
-                if (stack) {
-                    stack.querySelectorAll('.device-btn').forEach(b => {
-                        b.classList.remove('is-active');
-                        b.setAttribute('aria-pressed', 'false');
-                    });
-                }
-
-                // Luz do radar em 'Sistemas e Hosts' volta ao cinza neutro
-                atualizarLuzRadar();
-
-                if (cardLinux) cardLinux.classList.remove('is-visible');
-                if (cardWindows) cardWindows.classList.remove('is-visible');
-                if (cardPs4) cardPs4.classList.remove('is-visible');
+                // Compatibilidade legado
             }
 
             function toggleMobileHidebar(forceState) {
@@ -2950,24 +3033,23 @@ $temAlerta20GB = !empty($alertasEspaco);
                 }
             }
 
+            window.carouselMove = carouselMove;
+            window.carouselGoTo = carouselGoTo;
+            window.updateCarousel = updateCarousel;
             window.selectDevice = selectDevice;
             window.fecharTodosPaineis = fecharPaineis;
             window.toggleMobileHidebar = toggleMobileHidebar;
-            window.iniciarTimerAutoFechar = iniciarTimerAutoFechar;
             window.atualizarLuzRadar = atualizarLuzRadar;
 
-            // Se o usuario interagir com inputs no card (ex: PIN do PS4), concede mais 40s
-            [cardLinux, cardWindows, cardPs4].forEach(card => {
-                if (!card) return;
-                ['input', 'keydown'].forEach(evt => {
-                    card.addEventListener(evt, () => {
-                        if (painelAberto) iniciarTimerAutoFechar();
-                    }, { passive: true });
-                });
+            // Usa os mesmos ícones oficiais da sidebar (Tux, Windows, PlayStation) nos cards
+            SECTION_KEYS.forEach(key => {
+                const src = document.querySelector(`#btn-dev-${key} .btn-os-icon svg`);
+                const dst = document.querySelector(`#card-${key} .brand-icon-box`);
+                if (src && dst) dst.innerHTML = src.outerHTML;
             });
 
-            // Inicialização limpa: nenhum card aberto por padrão
-            fecharPaineis();
+            // Inicia no card do meio (Sistema Windows) para exibir painéis dos dois lados, como no modelo
+            updateCarousel(1);
 
         })();
 
@@ -3446,6 +3528,14 @@ $temAlerta20GB = !empty($alertasEspaco);
                     ['linux', 'windows', 'ps4'].forEach(host => {
                         const info = d.pings[host];
                         if (!info) return;
+
+                        // Atualiza o ping do sistema centralizado no rodapé do card
+                        const cardPing = document.getElementById('card-ping-' + host);
+                        if (cardPing) {
+                            cardPing.textContent = info.texto;
+                            cardPing.className = 'card-ping-val ' + (info.classe || 'ping-vermelho');
+                        }
+
                         const badge = document.getElementById('ping-badge-' + host);
                         if (badge) {
                             badge.textContent = info.texto;
