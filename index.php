@@ -1247,7 +1247,8 @@ $temAlerta20GB = !empty($alertasEspaco);
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 7px;
+            gap: 13px;
+            margin-top: 4px;
             width: 100%;
             position: relative;
         }
