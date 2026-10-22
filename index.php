@@ -2318,7 +2318,6 @@ $temAlerta20GB = !empty($alertasEspaco);
             </h1>
             <div class="server-badge">
                 <span class="host-tag mono">NEXUS</span>
-                <span class="ip-tag mono">(192.168.18.166)</span>
             </div>
             <span class="divider-dot">•</span>
             <span class="uptime-tag">Uptime: <strong class="mono" id="header-uptime"><?= htmlspecialchars($linux['recursos']['uptime']) ?></strong></span>
