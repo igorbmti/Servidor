@@ -85,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         html, body {
             width: 100%;
+            height: 100vh;
             min-height: 100vh;
             background: radial-gradient(circle at 50% 35%, #131A15, #080B0A 80%);
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -92,8 +93,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             align-items: center;
             justify-content: center;
-            overflow-x: hidden;
+            overflow: hidden;
             position: relative;
+            margin: 0;
+            padding: 0;
         }
 
         /* Linhas sutis de grade no fundo tecnológico */
@@ -112,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /* CAIXA DE LOGIN ESTILIZADA NAS CORES DO SISTEMA */
         .login-wrap {
             position: relative;
-            margin: 0 auto;
+            margin: 0;
             background: rgba(17, 23, 20, 0.94);
             width: 360px;
             max-width: 90vw;
@@ -342,18 +345,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <form id="form-login" class="form" method="POST" action="login.php" autocomplete="on">
-            <input type="text" placeholder="Username" name="un" id="un" required autocomplete="username" />
-            <input type="password" placeholder="Password" name="pw" id="pw" required autocomplete="current-password" />
+            <input type="text" placeholder="Usuário" name="un" id="un" required autocomplete="username" />
+            <input type="password" placeholder="Senha" name="pw" id="pw" required autocomplete="current-password" />
             <button type="submit" id="btn-submit">
-                <span>Sign in</span>
+                <span>Entrar</span>
             </button>
             <a href="#" id="link-toggle">
-                <p>Don't have an account? Register</p>
+                <p>Não tem uma conta? Cadastre-se</p>
             </a>
         </form>
 
         <div class="login-footer">
-            Acesso Restrito • Rede Local <span class="mono">192.168.18.166</span>
+            Acesso Restrito • Rede Local
         </div>
     </div>
 
@@ -400,12 +403,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         switchForm: function() {
             var $wrap = $("div.login-wrap").addClass('register');
-            $wrap.find('h2').html('Register');
+            $wrap.find('h2').html('Cadastro');
             if ($(".form input[name='rpw']").length === 0) {
-                $(".form input[name='pw']").after("<input type='password' placeholder='Re-type password' name='rpw' id='rpw' />");
+                $(".form input[name='pw']").after("<input type='password' placeholder='Confirme a senha' name='rpw' id='rpw' />");
             }
-            $wrap.find('button span').html('Sign up');
-            $wrap.find('a p').html('Have an account? Sign in');
+            $wrap.find('button span').html('Cadastrar');
+            $wrap.find('a p').html('Já tem uma conta? Entrar');
             $('#msg-box').removeClass('erro sucesso').addClass('aviso').text('Usuário não localizado na lista de operadores. Preencha os campos para verificação.').show();
         },
 
@@ -413,8 +416,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             var $wrap = $("div.login-wrap").removeClass('register');
             $wrap.find('h2').html('Login');
             $(".form input[name='rpw']").remove();
-            $wrap.find('button span').html('Sign in');
-            $wrap.find('a p').html("Don't have an account? Register");
+            $wrap.find('button span').html('Entrar');
+            $wrap.find('a p').html("Não tem uma conta? Cadastre-se");
             $('#msg-box').hide().text('').removeClass('aviso erro sucesso');
         },
 
@@ -464,12 +467,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 window.location.href = resp.redirect || 'index.php';
                             }, 400);
                         } else {
-                            $btn.prop('disabled', false).find('span').text('Sign in');
+                            $btn.prop('disabled', false).find('span').text('Entrar');
                             $('#msg-box').removeClass('sucesso aviso').addClass('erro').text(resp.erro || 'Falha na autenticação.').show();
                         }
                     },
                     error: function(xhr) {
-                        $btn.prop('disabled', false).find('span').text('Sign in');
+                        $btn.prop('disabled', false).find('span').text('Entrar');
                         var msg = 'Usuário ou senha incorretos.';
                         if (xhr.responseJSON && xhr.responseJSON.erro) {
                             msg = xhr.responseJSON.erro;
@@ -483,20 +486,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Inicialização
     loginform.init();
-
-    // Centralização dinâmica complementar mantendo compatibilidade com o script original
-    function centralizarLogin() {
-        var $wrap = $(".login-wrap");
-        if ($(window).height() > $wrap.outerHeight() + 40) {
-            var margem = Math.max(20, Math.floor(($(window).height() / 2) - ($wrap.outerHeight() / 2)));
-            $wrap.css("margin-top", margem + "px");
-        } else {
-            $wrap.css("margin-top", "20px");
-        }
-    }
-
-    $(document).ready(centralizarLogin);
-    $(window).on('resize', centralizarLogin);
     </script>
 </body>
 </html>
