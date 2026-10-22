@@ -1132,12 +1132,12 @@ $temAlerta20GB = !empty($alertasEspaco);
 
         /* SIDEBAR FLUTUANTE À ESQUERDA (SEM LINHAS EXTERNAS / SEM BORDAS DE QUADRO) */
         .network-sidebar {
-            width: 220px;
+            width: 180px;
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             background: transparent;
             border: none;
             padding: 0;
@@ -1155,7 +1155,7 @@ $temAlerta20GB = !empty($alertasEspaco);
             border-bottom: 1px solid rgba(38, 53, 43, 0.5);
             margin-bottom: 2px;
             width: 100%;
-            max-width: 190px;
+            max-width: 165px;
             transition: border-color 0.25s ease;
         }
 
@@ -1242,33 +1242,37 @@ $temAlerta20GB = !empty($alertasEspaco);
             70%, 100% { transform: scale(2.4); opacity: 0; }
         }
 
-        /* PILHA DE BOTÕES (DEVICES STACK) CENTRALIZADA E ALINHADA */
+        /* PILHA DE BOTÕES (DEVICES STACK) COMPACTA COM LIQUID GLASS */
         .devices-stack {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 10px;
+            gap: 7px;
             width: 100%;
             position: relative;
         }
 
         .device-btn {
             width: 100%;
-            max-width: 170px;
+            max-width: 125px;
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            gap: 14px;
-            padding: 9px 24px;
-            background: rgba(17, 23, 20, 0.85);
-            border: 1px solid var(--borda);
-            border-radius: 12px;
+            gap: 9px;
+            padding: 5px 14px;
+            background: rgba(16, 23, 19, 0.65);
+            backdrop-filter: blur(14px) saturate(180%);
+            -webkit-backdrop-filter: blur(14px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            box-shadow: 
+                0 4px 12px -2px rgba(0, 0, 0, 0.5),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.2),
+                inset 0 -1px 1px 0 rgba(0, 0, 0, 0.45);
             color: var(--ink-sec);
             cursor: pointer;
             text-align: left;
             font-family: 'Inter', system-ui, sans-serif;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
             transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             user-select: none;
             box-sizing: border-box;
@@ -1276,38 +1280,47 @@ $temAlerta20GB = !empty($alertasEspaco);
         }
 
         .device-btn:hover {
-            background: var(--bg-secundario);
-            border-color: rgba(34, 197, 94, 0.35);
+            background: rgba(24, 34, 28, 0.8);
+            border-color: rgba(34, 197, 94, 0.4);
             color: #FFFFFF;
-            transform: translateY(-2px);
+            transform: translateY(-1.5px);
+            box-shadow: 
+                0 6px 16px -2px rgba(0, 0, 0, 0.65),
+                0 0 10px -2px rgba(34, 197, 94, 0.25),
+                inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.3),
+                inset 0 -1px 1px 0 rgba(0, 0, 0, 0.45);
         }
 
         .device-btn.is-active {
             color: #FFFFFF;
-            transform: translateY(-2px);
-            background: rgba(34, 197, 94, 0.15);
-            border-color: var(--brand);
-            box-shadow: 0 0 16px -2px rgba(34, 197, 94, 0.45);
+            transform: translateY(-1.5px);
+            background: rgba(34, 197, 94, 0.16);
+            border-color: rgba(34, 197, 94, 0.75);
+            box-shadow: 
+                0 6px 16px -2px rgba(0, 0, 0, 0.6),
+                0 0 14px -1px rgba(34, 197, 94, 0.45),
+                inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.35),
+                inset 0 -1px 1px 0 rgba(34, 197, 94, 0.3);
         }
 
         .device-btn .btn-os-icon {
-            width: 22px;
-            height: 22px;
+            width: 17px;
+            height: 17px;
             display: grid;
             place-items: center;
             flex-shrink: 0;
         }
 
         .device-btn .btn-os-icon svg {
-            width: 18px;
-            height: 18px;
+            width: 14px;
+            height: 14px;
         }
 
         .device-btn .btn-dev-label {
-            font-size: 13.5px;
+            font-size: 11.5px;
             font-weight: 700;
             color: var(--ink);
-            letter-spacing: 0.3px;
+            letter-spacing: 0.2px;
             line-height: 1;
         }
 
