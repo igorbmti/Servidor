@@ -90,7 +90,7 @@ function coletarRecursosLinux(): array
         'mem_usada_gb' => '0 GB',
         'mem_livre_gb' => '0 GB',
         'mem_percentual' => 0.0,
-        'saude_disco' => '100% Saudável (Running)',
+        'saude_disco' => '100% Saudável',
         'disco_estado' => 'running'
     ];
 
@@ -132,7 +132,7 @@ function coletarRecursosLinux(): array
     // Saúde do Disco
     $rawState = @file_get_contents('/sys/block/sda/device/state');
     if ($rawState !== false && trim($rawState) === 'running') {
-        $res['saude_disco'] = '100% Saudável (Running)';
+        $res['saude_disco'] = '100% Saudável';
         $res['disco_estado'] = 'running';
     } else {
         $res['saude_disco'] = 'Operacional';
@@ -173,7 +173,7 @@ function coletarArmazenamentoLinux(): array
             'modelo' => trim($dev['model'] ?? 'WDC WD5000LPVX-0'),
             'total_bytes' => $discoTotal,
             'total_gb' => formatarGB($discoTotal, 1),
-            'saude' => '100% Saudável (Running)'
+            'saude' => '100% Saudável'
         ];
 
         if (!empty($dev['children'])) {
@@ -193,7 +193,7 @@ function coletarArmazenamentoLinux(): array
             'modelo' => 'WDC WD5000LPVX-0',
             'total_bytes' => $discoTotal,
             'total_gb' => formatarGB($discoTotal, 1),
-            'saude' => '100% Saudável (Running)'
+            'saude' => '100% Saudável'
         ];
     }
 
@@ -275,7 +275,7 @@ function coletarArmazenamentoWindows(): array
             'mem_resumo' => '—',
             'mem_usada_gb' => '—',
             'mem_total_gb' => '—',
-            'saude_disco' => '100% Saudável (Running)',
+            'saude_disco' => '100% Saudável',
             'disco_modelo' => 'KINGSTON SA400S37120G',
             'disco_capacidade_gb' => '111,8 GB'
         ],
@@ -343,9 +343,13 @@ function coletarArmazenamentoWindows(): array
     $rec = $json['recursos'] ?? [];
     if (!empty($rec)) {
         $resultado['ip'] = $rec['ip'] ?? WINDOWS_IP;
-        $saudeRec = (string)($rec['saude_disco'] ?? '100% Saudável (Running)');
+        $saudeRec = (string)($rec['saude_disco'] ?? '100% Saudável');
         if (strpos($saudeRec, 'Saud') !== false || strpos($saudeRec, 'Healthy') !== false || strpos($saudeRec, 'Running') !== false) {
-            $saudeRec = '100% Saudável (Running)';
+            $saudeRec = '100% Saudável';
+        }
+        $saudeRec = trim(str_ireplace(['(Running)', 'Running'], '', $saudeRec));
+        if ($saudeRec === '') {
+            $saudeRec = '100% Saudável';
         }
         $resultado['recursos'] = [
             'ip' => $resultado['ip'],
@@ -2504,7 +2508,7 @@ $temAlerta20GB = !empty($alertasEspaco);
                                 </div>
                                 <div class="quick-metric">
                                     <span class="q-label">Saúde Disco</span>
-                                    <span class="q-val ok" id="draw-linux-saude"><?= htmlspecialchars($linux['recursos']['saude_disco']) ?></span>
+                                    <span class="q-val ok" id="draw-linux-saude"><?= htmlspecialchars(trim(str_ireplace(['(Running)', 'Running'], '', $linux['recursos']['saude_disco'] ?? '100% Saudável'))) ?></span>
                                 </div>
                             </div>
 
@@ -2601,7 +2605,7 @@ $temAlerta20GB = !empty($alertasEspaco);
                                 </div>
                                 <div class="quick-metric">
                                     <span class="q-label">Saúde Disco</span>
-                                    <span class="q-val ok" id="draw-win-saude"><?= htmlspecialchars($windows['recursos']['saude_disco'] ?? '100% Saudável (Running)') ?></span>
+                                    <span class="q-val ok" id="draw-win-saude"><?= htmlspecialchars(trim(str_ireplace(['(Running)', 'Running'], '', $windows['recursos']['saude_disco'] ?? '100% Saudável'))) ?></span>
                                 </div>
                             </div>
 
@@ -3310,7 +3314,7 @@ $temAlerta20GB = !empty($alertasEspaco);
                     if (ram && d.recursos) ram.textContent = `${d.recursos.mem_usada_gb} / ${d.recursos.mem_total_gb}`;
 
                     const saude = document.getElementById('draw-linux-saude');
-                    if (saude && d.recursos?.saude_disco) saude.textContent = d.recursos.saude_disco;
+                    if (saude && d.recursos?.saude_disco) saude.textContent = String(d.recursos.saude_disco).replace(/\s*\(Running\)/gi, '').trim();
 
                     // Raiz LVM
                     if (d.linux_volumes && d.linux_volumes.length > 0) {
@@ -3356,7 +3360,7 @@ $temAlerta20GB = !empty($alertasEspaco);
                     if (winRam && d.windows.recursos?.mem_resumo) winRam.textContent = d.windows.recursos.mem_resumo;
 
                     const winSaude = document.getElementById('draw-win-saude');
-                    if (winSaude && d.windows.recursos?.saude_disco) winSaude.textContent = d.windows.recursos.saude_disco;
+                    if (winSaude && d.windows.recursos?.saude_disco) winSaude.textContent = String(d.windows.recursos.saude_disco).replace(/\s*\(Running\)/gi, '').trim();
 
                     const winTot = document.getElementById('win-disco-total');
                     if (winTot && d.windows.recursos?.disco_capacidade_gb) winTot.textContent = 'Disco C: ' + d.windows.recursos.disco_capacidade_gb;

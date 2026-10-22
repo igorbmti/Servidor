@@ -30,7 +30,7 @@ $usedMem = $totMem - $freeMem
 # 2. Saúde e Modelo do Disco Físico
 $physicalDisk = Get-PhysicalDisk | Select-Object -First 1
 $healthRaw = if ($physicalDisk) { $physicalDisk.HealthStatus } else { 'Healthy' }
-$healthStr = if ($healthRaw -eq 'Healthy') { '100% Saudável (Running)' } else { "$healthRaw" }
+$healthStr = if ($healthRaw -eq 'Healthy') { '100% Saudável' } else { "$healthRaw" }
 $modelStr = if ($physicalDisk -and $physicalDisk.FriendlyName) { $physicalDisk.FriendlyName } else { "Disco Físico SSD" }
 $totalDiskGb = if ($physicalDisk -and $physicalDisk.Size -gt 0) {
     [string]::Format("{0:N1} GB", ($physicalDisk.Size / 1GB))
