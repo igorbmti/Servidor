@@ -1692,8 +1692,7 @@ $temAlerta20GB = !empty($alertasEspaco);
             display: flex;
             flex-direction: column;
             gap: 5px;
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: hidden;
             box-sizing: border-box;
             position: relative;
         }
@@ -2745,32 +2744,7 @@ $temAlerta20GB = !empty($alertasEspaco);
                                 </div>
                             </div>
 
-                            <!-- 3. ESTADO OPERACIONAL DO CONSOLE -->
-                            <div class="main-storage-box" style="margin-top: 4px;">
-                                <div class="storage-head">
-                                    <span class="storage-title">
-                                        <strong>Estado Operacional</strong>
-                                    </span>
-                                    <span class="storage-pct mono <?= $ps4['estado_classe'] ?>" id="ps4-estado-tag" style="font-size: 10px;">
-                                        <?= $ps4['ddp_confirmado'] ? 'Confirmado via DDP' : ($ps4['online'] ? 'Detectado na Rede' : 'Inacessível') ?>
-                                    </span>
-                                </div>
-
-                                <div style="background: rgba(0, 0, 0, 0.35); padding: 5px 8px; border-radius: 5px; display: flex; flex-direction: column; gap: 3px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span style="font-size: 9px; color: var(--ink-muted); text-transform: uppercase;">Atividade Atual:</span>
-                                        <span id="ps4-app-nome" style="font-size: 11px; font-weight: 700; color: #38BDF8;">
-                                            <?= !empty($ps4['app_ativa']) ? htmlspecialchars($ps4['app_ativa']) : ($ps4['online'] ? 'Menu do Sistema / Em Espera' : 'Desconectado') ?>
-                                        </span>
-                                    </div>
-                                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--ink-sec);">
-                                        <span>Title ID: <strong class="mono" id="ps4-app-id"><?= !empty($ps4['app_titleid']) ? htmlspecialchars($ps4['app_titleid']) : 'N/A' ?></strong></span>
-                                        <span>Firmware: <strong class="mono" id="ps4-sys-ver"><?= !empty($ps4['sistema_versao']) ? htmlspecialchars($ps4['sistema_versao']) : 'N/A' ?></strong></span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- 4. CONTROLES DO CONSOLE (LIGAR / REPOUSO) -->
+                            <!-- 3. CONTROLES DO CONSOLE (LIGAR / REPOUSO) -->
                             <div style="display: flex; flex-direction: column; gap: 5px; background: var(--bg-secundario); padding: 6px 8px; border-radius: 6px; border: 1px solid var(--borda);">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <span style="font-size: 10px; font-weight: 600; color: var(--ink);">Controles do Console (Rede Local)</span>
