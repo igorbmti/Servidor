@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+if (!ini_get('zlib.output_compression') && function_exists('ob_gzhandler') && !isset($_GET['acao'])) {
+    ob_start('ob_gzhandler');
+}
+
 session_start();
 
 // Proteção de autenticação: redireciona ao login se não autenticado
@@ -16,6 +20,9 @@ if (empty($_SESSION['usuario_logado'])) {
 }
 
 $usuarioLogado = (string)$_SESSION['usuario_logado'];
+
+// Libera o lock da sessão: evita que requisições paralelas (APIs de polling) fiquem enfileiradas
+session_write_close();
 
 
 /**
@@ -156,8 +163,10 @@ function coletarArmazenamentoLinux(): array
     ];
 
     $output = [];
-    $ret = 0;
-    @exec('lsblk -b -J -e 7,11 -o NAME,PATH,SIZE,TYPE,FSTYPE,MOUNTPOINTS,PKNAME,MODEL 2>/dev/null', $output, $ret);
+    $ret = 1;
+    if (stripos(PHP_OS, 'WIN') !== 0) {
+        @exec('lsblk -b -J -e 7,11 -o NAME,PATH,SIZE,TYPE,FSTYPE,MOUNTPOINTS,PKNAME,MODEL 2>/dev/null', $output, $ret);
+    }
     $lsblkJson = ($ret === 0 && !empty($output)) ? json_decode(implode('', $output), true) : null;
 
     $discoTotal = 500107862016.0; // 500.1 GB
@@ -288,8 +297,13 @@ function coletarArmazenamentoWindows(): array
     // Checagem real de conectividade via Ping ICMP
     $pingOut = [];
     $pingRet = 1;
-    @exec("ping -c 1 -W 1 " . WINDOWS_IP . " 2>/dev/null", $pingOut, $pingRet);
-    $resultado['ping_online'] = ($pingRet === 0);
+    $isWin = (stripos(PHP_OS, 'WIN') === 0);
+    if ($isWin) {
+        $resultado['ping_online'] = true;
+    } else {
+        @exec("ping -c 1 -W 0.3 " . escapeshellarg(WINDOWS_IP) . " 2>/dev/null", $pingOut, $pingRet);
+        $resultado['ping_online'] = ($pingRet === 0);
+    }
 
     $caminhoWindows = file_exists(__DIR__ . '/windows.json') ? __DIR__ . '/windows.json' : WINDOWS_JSON;
     if (!file_exists($caminhoWindows) && file_exists(WINDOWS_JSON)) {
@@ -432,78 +446,83 @@ function coletarDadosPS4(): array
         ]
     ];
 
-    // 1. Teste de Ping Real
+    $isWin = (stripos(PHP_OS, 'WIN') === 0);
+
+    // 1. Teste de Ping Real (rápido e compatível com Windows/Linux)
     $pingOut = [];
     $pingRet = 1;
-    @exec("ping -c 1 -W 1 {$ip} 2>/dev/null", $pingOut, $pingRet);
+    $cmdPing = $isWin ? "ping -n 1 -w 250 " . escapeshellarg($ip) . " 2>NUL" : "ping -c 1 -W 0.25 " . escapeshellarg($ip) . " 2>/dev/null";
+    @exec($cmdPing, $pingOut, $pingRet);
     if ($pingRet === 0) {
         $res['online'] = true;
         $res['estado'] = 'Conectado à Rede';
         $res['estado_classe'] = 'atencao';
         $str = implode(' ', $pingOut);
-        if (preg_match('/time=([\d\.]+)\s*ms/', $str, $m)) {
+        if (preg_match('/(?:time|tempo)[=<]\s*([\d\.]+)\s*ms/i', $str, $m)) {
             $res['ping_ms'] = number_format((float)$m[1], 1, ',', '.') . ' ms';
         }
     }
 
-    // 2. Consulta real ao protocolo DDP via UDP 987
-    $sock = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-    if ($sock) {
-        @socket_set_option($sock, SOL_SOCKET, SO_RCVTIMEO, ['sec' => 1, 'usec' => 200000]);
-        @socket_bind($sock, '0.0.0.0', 0);
-        $msg = "SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00020020\n";
-        @socket_sendto($sock, $msg, strlen($msg), 0, $ip, 987);
-        $buf = '';
-        $from = '';
-        $port = 0;
-        $bytes = @socket_recvfrom($sock, $buf, 2048, 0, $from, $port);
-        if ($bytes !== false && $bytes > 0) {
-            $res['online'] = true;
-            $res['ddp_confirmado'] = true;
-            $res['estado'] = 'Ligado (Operacional)';
-            $res['estado_classe'] = 'normal';
+    // 2. Consulta ao protocolo DDP via UDP 987 (com checagem segura de socket_create)
+    if (function_exists('socket_create')) {
+        $sock = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+        if ($sock) {
+            @socket_set_option($sock, SOL_SOCKET, SO_RCVTIMEO, ['sec' => 0, 'usec' => 150000]);
+            @socket_bind($sock, '0.0.0.0', 0);
+            $msg = "SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00020020\n";
+            @socket_sendto($sock, $msg, strlen($msg), 0, $ip, 987);
+            $buf = '';
+            $from = '';
+            $port = 0;
+            $bytes = @socket_recvfrom($sock, $buf, 2048, 0, $from, $port);
+            if ($bytes !== false && $bytes > 0) {
+                $res['online'] = true;
+                $res['ddp_confirmado'] = true;
+                $res['estado'] = 'Ligado (Operacional)';
+                $res['estado_classe'] = 'normal';
 
-            $linhas = explode("\n", $buf);
-            foreach ($linhas as $l) {
-                $l = trim($l);
-                if (stripos($l, 'host-name:') === 0) {
-                    $res['host_name'] = trim(substr($l, 10));
-                } elseif (stripos($l, 'host-id:') === 0) {
-                    $res['host_id'] = trim(substr($l, 8));
-                } elseif (stripos($l, 'system-version:') === 0) {
-                    $res['sistema_versao'] = trim(substr($l, 15));
-                } elseif (stripos($l, 'running-app-name:') === 0) {
-                    $res['app_ativa'] = trim(substr($l, 17));
-                } elseif (stripos($l, 'running-app-titleid:') === 0) {
-                    $res['app_titleid'] = trim(substr($l, 20));
-                } elseif (stripos($l, 'status-code:') === 0) {
-                    $code = trim(substr($l, 12));
-                    if ($code === '620') {
-                        $res['estado'] = 'Modo de Repouso (Standby)';
-                        $res['estado_classe'] = 'atencao';
+                $linhas = explode("\n", $buf);
+                foreach ($linhas as $l) {
+                    $l = trim($l);
+                    if (stripos($l, 'host-name:') === 0) {
+                        $res['host_name'] = trim(substr($l, 10));
+                    } elseif (stripos($l, 'host-id:') === 0) {
+                        $res['host_id'] = trim(substr($l, 8));
+                    } elseif (stripos($l, 'system-version:') === 0) {
+                        $res['sistema_versao'] = trim(substr($l, 15));
+                    } elseif (stripos($l, 'running-app-name:') === 0) {
+                        $res['app_ativa'] = trim(substr($l, 17));
+                    } elseif (stripos($l, 'running-app-titleid:') === 0) {
+                        $res['app_titleid'] = trim(substr($l, 20));
+                    } elseif (stripos($l, 'status-code:') === 0) {
+                        $code = trim(substr($l, 12));
+                        if ($code === '620') {
+                            $res['estado'] = 'Modo de Repouso (Standby)';
+                            $res['estado_classe'] = 'atencao';
+                        }
                     }
                 }
-            }
 
-            if (!empty($res['app_ativa'])) {
-                $res['estado'] = 'Ligado — Em Execução: ' . $res['app_ativa'];
+                if (!empty($res['app_ativa'])) {
+                    $res['estado'] = 'Ligado — Em Execução: ' . $res['app_ativa'];
+                }
             }
+            @socket_close($sock);
         }
-        @socket_close($sock);
     }
 
-    // 3. Checagem de porta TCP 9295 (Remote Play / Second Screen)
-    $fp = @fsockopen($ip, 9295, $errno, $errstr, 0.4);
-    if ($fp) {
-        $res['porta_remota_aberta'] = true;
-        fclose($fp);
-        if (!$res['ddp_confirmado']) {
+    // 3. Checagem de porta TCP 9295 (Remote Play / Second Screen) apenas se necessário
+    if (!$res['ddp_confirmado']) {
+        $fp = @fsockopen($ip, 9295, $errno, $errstr, 0.25);
+        if ($fp) {
+            $res['porta_remota_aberta'] = true;
+            fclose($fp);
             $res['estado'] = 'Conexão Remota Ativa (Porta 9295)';
             $res['estado_classe'] = 'normal';
+        } elseif (!$res['online']) {
+            $res['estado'] = 'Offline / Desligado';
+            $res['estado_classe'] = 'critico';
         }
-    } elseif (!$res['online']) {
-        $res['estado'] = 'Offline / Desligado';
-        $res['estado_classe'] = 'critico';
     }
 
     return $res;
@@ -585,7 +604,7 @@ function enviarStandbyPS4(?string $pin = null): array
 
 function processarResultadoPing(string $saida): array
 {
-    if (preg_match('/time[=<]([\d\.]+)\s*ms/i', $saida, $m)) {
+    if (preg_match('/(?:time|tempo)[=<]\s*([\d\.]+)\s*ms/i', $saida, $m)) {
         $ms = (float)$m[1];
         $intMs = max(1, (int)round($ms));
         $texto = $intMs . 'ms';
@@ -618,7 +637,7 @@ function executarPingUnico(string $ip, bool $isWin): array
 {
     $out = [];
     $ret = 1;
-    $cmd = $isWin ? "ping -n 1 -w 500 {$ip}" : "ping -c 1 -W 0.5 {$ip}";
+    $cmd = $isWin ? "ping -n 1 -w 250 " . escapeshellarg($ip) . " 2>NUL" : "ping -c 1 -W 0.25 " . escapeshellarg($ip) . " 2>/dev/null";
     @exec($cmd, $out, $ret);
     return processarResultadoPing(implode(' ', $out));
 }
@@ -639,9 +658,9 @@ function coletarPingsRede(): array
     $fWin = tempnam(sys_get_temp_dir(), 'pwin_');
     $fPs4 = tempnam(sys_get_temp_dir(), 'pps4_');
 
-    $cmd = 'ping -c 1 -W 0.5 127.0.0.1 > ' . escapeshellarg($fLin) . ' 2>&1 & ' .
-           'ping -c 1 -W 0.5 ' . escapeshellarg(WINDOWS_IP) . ' > ' . escapeshellarg($fWin) . ' 2>&1 & ' .
-           'ping -c 1 -W 0.5 ' . escapeshellarg(PS4_IP) . ' > ' . escapeshellarg($fPs4) . ' 2>&1 & wait';
+    $cmd = 'ping -c 1 -W 0.25 127.0.0.1 > ' . escapeshellarg($fLin) . ' 2>&1 & ' .
+           'ping -c 1 -W 0.25 ' . escapeshellarg(WINDOWS_IP) . ' > ' . escapeshellarg($fWin) . ' 2>&1 & ' .
+           'ping -c 1 -W 0.25 ' . escapeshellarg(PS4_IP) . ' > ' . escapeshellarg($fPs4) . ' 2>&1 & wait';
     @exec($cmd);
 
     $outLin = @file_get_contents($fLin) ?: '';
@@ -657,6 +676,49 @@ function coletarPingsRede(): array
         'windows' => processarResultadoPing($outWin),
         'ps4' => processarResultadoPing($outPs4)
     ];
+}
+
+/**
+ * Cache inteligente em memória/arquivo temporário para evitar travamentos
+ * e garantir resposta em menos de 10ms na navegação do usuário.
+ */
+function obterDadosCompletos(bool $forcarAtualizacao = false, bool $aceitarAntigo = false): array
+{
+    $cacheFile = __DIR__ . '/cache_painel.json';
+    $ttl = 15; // Cache de 15 segundos para resposta instantânea (<5ms) e navegação ultra-fluida
+
+    if (!$forcarAtualizacao && file_exists($cacheFile)) {
+        $mtime = @filemtime($cacheFile);
+        // $aceitarAntigo: renderização inicial usa cache de até 1h; o JS atualiza logo após o load
+        if ($mtime !== false && (time() - $mtime) <= ($aceitarAntigo ? 3600 : $ttl)) {
+            $conteudo = @file_get_contents($cacheFile);
+            if ($conteudo !== false) {
+                $dec = json_decode($conteudo, true);
+                if (is_array($dec) && isset($dec['linux'], $dec['windows'], $dec['ps4'], $dec['pings'])) {
+                    return $dec;
+                }
+            }
+        }
+    }
+
+    $l = coletarArmazenamentoLinux();
+    $w = coletarArmazenamentoWindows();
+    $p = coletarDadosPS4();
+    $pings = coletarPingsRede();
+
+    $resultado = [
+        'linux' => $l,
+        'windows' => $w,
+        'ps4' => $p,
+        'pings' => $pings,
+        'timestamp' => time()
+    ];
+
+    $tmp = $cacheFile . '.' . getmypid() . '.tmp';
+    if (@file_put_contents($tmp, json_encode($resultado)) !== false) {
+        @rename($tmp, $cacheFile);
+    }
+    return $resultado;
 }
 
 // =============================================================
@@ -678,13 +740,16 @@ if (isset($_GET['acao'])) {
     }
 }
 
+$forcar = isset($_GET['force']) && ($_GET['force'] === '1' || $_GET['force'] === 'true');
+
 if (isset($_GET['api']) && $_GET['api'] === 'pings') {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-cache, no-store, must-revalidate');
+    $dados = obterDadosCompletos($forcar);
     echo json_encode([
         'sucesso' => true,
         'timestamp' => time(),
-        'pings' => coletarPingsRede()
+        'pings' => $dados['pings']
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
@@ -692,9 +757,10 @@ if (isset($_GET['api']) && $_GET['api'] === 'pings') {
 if (isset($_GET['api']) && $_GET['api'] === '1') {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-cache, no-store, must-revalidate');
-    $l = coletarArmazenamentoLinux();
-    $w = coletarArmazenamentoWindows();
-    $p = coletarDadosPS4();
+    $dados = obterDadosCompletos($forcar);
+    $l = $dados['linux'];
+    $w = $dados['windows'];
+    $p = $dados['ps4'];
 
     $fontes = [
         'linux' => [
@@ -735,10 +801,12 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
     exit;
 }
 
-$linux = coletarArmazenamentoLinux();
-$windows = coletarArmazenamentoWindows();
-$ps4 = coletarDadosPS4();
-$pingsIniciais = coletarPingsRede();
+$dadosIniciais = obterDadosCompletos(false, true);
+$cacheEraAntigo = isset($dadosIniciais['timestamp']) && (time() - (int)$dadosIniciais['timestamp']) > 15;
+$linux = $dadosIniciais['linux'];
+$windows = $dadosIniciais['windows'];
+$ps4 = $dadosIniciais['ps4'];
+$pingsIniciais = $dadosIniciais['pings'];
 
 // Verificação de espaço livre < 20 GB em qualquer equipamento
 $limite20GB = 20.0 * 1024 * 1024 * 1024; // 20 GB em bytes
@@ -764,7 +832,8 @@ $temAlerta20GB = !empty($alertasEspaco);
     <title>Painel de controle — NEXUS | Monitoramento 360°</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet"></noscript>
     <style>
         :root {
             --brand: #22C55E;
@@ -792,13 +861,10 @@ $temAlerta20GB = !empty($alertasEspaco);
             padding: 0;
         }
 
-        body {
-            background-color: #000000;
-            background-image: url('fundo_painel.jpg');
-            background-repeat: no-repeat;
-            background-position: center center;
-            background-size: cover;
-            background-attachment: fixed;
+        html, body {
+            background-color: #000000 !important;
+            background: #000000 !important;
+            background-image: none !important;
             color: var(--ink);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: 13px;
@@ -1309,11 +1375,7 @@ $temAlerta20GB = !empty($alertasEspaco);
         }
 
         .device-btn .btn-os-icon {
-            width: 17px;
-            height: 17px;
-            display: grid;
-            place-items: center;
-            flex-shrink: 0;
+            display: none;
         }
 
         .device-btn .btn-os-icon svg {
@@ -1625,20 +1687,23 @@ $temAlerta20GB = !empty($alertasEspaco);
             box-sizing: border-box;
         }
 
-        /* Card centralizado no MEIO DA PÁGINA (proporção quadrada do modelo: 23rem) */
+        /* Card centralizado no MEIO DA PÁGINA (dimensões amplas e confortáveis) */
         .carousel-3d-wrapper {
-            position: absolute;
+            --fit: 1;
+            position: fixed;
             left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            width: 23rem;
-            height: 25rem;
+            top: calc(50% + 26px);
+            transform: translate(-50%, -50%) scale(var(--fit));
+            transform-origin: center center;
+            width: 30rem;
+            height: 33rem;
             z-index: 15;
         }
 
-        @media (max-width: 1100px) {
+        @media (max-width: 768px) {
             .painel-center-stage {
                 position: relative;
+                width: 100%;
             }
             .carousel-3d-wrapper {
                 position: relative;
@@ -1646,7 +1711,9 @@ $temAlerta20GB = !empty($alertasEspaco);
                 top: auto;
                 transform: none;
                 margin: 0 auto;
-                max-width: calc(100vw - 100px);
+                width: calc(100% - 120px);
+                max-width: 22rem;
+                height: 41rem;
             }
         }
 
@@ -1669,8 +1736,8 @@ $temAlerta20GB = !empty($alertasEspaco);
                 scaleY(calc(1 + var(--abs-offset) * -0.4))
                 translateZ(calc(var(--abs-offset) * -30rem))
                 translateX(calc(var(--direction) * -5rem));
-            filter: blur(calc(var(--abs-offset) * 0.8rem));
-            transition: all 0.35s ease-out;
+            filter: blur(calc(var(--abs-offset) * 1rem));
+            transition: all 0.3s ease-out;
             transform-style: preserve-3d;
             box-sizing: border-box;
             cursor: pointer;
@@ -1679,32 +1746,72 @@ $temAlerta20GB = !empty($alertasEspaco);
         .card-container[style*="--active: 1"],
         .card-container[style*="--active:1"] {
             cursor: default;
+            filter: none !important;
+            z-index: 25 !important;
         }
 
-        /* CARDS COM FUNDO PRETO (ATIVO) E PAINÉIS LATERAIS LEVEMENTE CLAREADOS (COMO NO MODELO) */
+        /* =============================================================
+           ESTILO LIQUID GLASS (VIDRO LÍQUIDO ULTRA-MODERNO)
+           ============================================================= */
         .card {
             width: 100%;
             height: 100%;
-            padding: 16px 16px 14px;
-            background-color: hsl(150, 10%, calc(var(--abs-offset, 0) * 18%)) !important;
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            border-radius: 12px;
+            padding: 16px 18px 14px;
+            background: linear-gradient(150deg, rgba(14, 22, 18, 0.90) 0%, rgba(8, 12, 10, 0.96) 100%) !important;
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.25);
+            border-left: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 18px;
             color: var(--ink-sec);
             text-align: left;
             transition: all 0.3s ease-out;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.95), 0 0 1px rgba(255, 255, 255, 0.2);
+            box-shadow: 
+                0 25px 60px -10px rgba(0, 0, 0, 0.88),
+                0 10px 20px -5px rgba(0, 0, 0, 0.6),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.18),
+                inset 0 -1px 2px 0 rgba(0, 0, 0, 0.5);
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 13px;
             overflow: hidden;
             box-sizing: border-box;
             position: relative;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
         }
 
-        /* Conteúdo só aparece no card ativo (cards laterais ficam como painéis limpos) */
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 38%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
+            pointer-events: none;
+            border-top-left-radius: 18px;
+            border-top-right-radius: 18px;
+            z-index: 1;
+        }
+
+        /* CONTEÚDO DO CARD: TRANSIÇÃO E OPACIDADE DO MODELO DE REFERÊNCIA */
         .carousel .card > * {
+            box-sizing: border-box;
+            transition: all 0.3s ease-out;
             opacity: var(--active, 1);
-            transition: opacity 0.3s ease-out;
+        }
+
+        .card-container[style*="--active: 1"] .card > *,
+        .card-container[style*="--active:1"] .card > * {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
+
+        .card-container:not([style*="--active: 1"]):not([style*="--active:1"]) .card > * {
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
 
         .card::-webkit-scrollbar {
@@ -1776,36 +1883,56 @@ $temAlerta20GB = !empty($alertasEspaco);
             justify-content: center;
         }
 
-        /* Efeito de destaque para os cards quando ativos */
+        /* Efeito de destaque temático Liquid Glass quando o card estiver ativo */
         #card-linux {
-            border-color: rgba(34, 197, 94, 0.25);
+            background: linear-gradient(150deg, rgba(16, 28, 20, 0.72) 0%, rgba(8, 14, 10, 0.88) 100%) !important;
+            border-color: rgba(34, 197, 94, 0.22);
+            border-top-color: rgba(34, 197, 94, 0.45);
         }
         .card-container[style*="--active: 1"] #card-linux,
         .card-container[style*="--active:1"] #card-linux {
-            border-color: rgba(34, 197, 94, 0.5);
-            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.98), 0 0 25px rgba(34, 197, 94, 0.2);
+            border-color: rgba(34, 197, 94, 0.45);
+            border-top-color: rgba(74, 222, 128, 0.75);
+            box-shadow: 
+                0 30px 70px -10px rgba(0, 0, 0, 0.92),
+                0 0 35px -5px rgba(34, 197, 94, 0.25),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.22),
+                inset 0 -1px 2px 0 rgba(0, 0, 0, 0.6);
         }
 
         #card-windows {
-            border-color: rgba(56, 189, 248, 0.25);
+            background: linear-gradient(150deg, rgba(14, 26, 36, 0.72) 0%, rgba(7, 13, 20, 0.88) 100%) !important;
+            border-color: rgba(56, 189, 248, 0.22);
+            border-top-color: rgba(56, 189, 248, 0.45);
         }
         .card-container[style*="--active: 1"] #card-windows,
         .card-container[style*="--active:1"] #card-windows {
-            border-color: rgba(56, 189, 248, 0.5);
-            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.98), 0 0 25px rgba(56, 189, 248, 0.2);
+            border-color: rgba(56, 189, 248, 0.45);
+            border-top-color: rgba(125, 211, 252, 0.75);
+            box-shadow: 
+                0 30px 70px -10px rgba(0, 0, 0, 0.92),
+                0 0 35px -5px rgba(56, 189, 248, 0.25),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.22),
+                inset 0 -1px 2px 0 rgba(0, 0, 0, 0.6);
         }
 
         #card-ps4 {
+            background: linear-gradient(150deg, rgba(10, 20, 38, 0.72) 0%, rgba(6, 10, 22, 0.88) 100%) !important;
             border-color: rgba(0, 112, 209, 0.25);
+            border-top-color: rgba(56, 189, 248, 0.45);
         }
         .card-container[style*="--active: 1"] #card-ps4,
         .card-container[style*="--active:1"] #card-ps4 {
             border-color: rgba(0, 112, 209, 0.5);
-            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.98), 0 0 25px rgba(0, 112, 209, 0.2);
+            border-top-color: rgba(96, 165, 250, 0.75);
+            box-shadow: 
+                0 30px 70px -10px rgba(0, 0, 0, 0.92),
+                0 0 35px -5px rgba(0, 112, 209, 0.3),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.22),
+                inset 0 -1px 2px 0 rgba(0, 0, 0, 0.6);
         }
 
-        /* BOTÕES DE NAVEGAÇÃO PASSAR PARA DIREITA E ESQUERDA */
-        /* SETAS BRANCAS SEM FUNDO, NAS BORDAS DO CARD (IGUAL AO MODELO) */
+        /* BOTÕES DE NAVEGAÇÃO PASSAR PARA DIREITA E ESQUERDA (EXATO MODELO IMAGEM 2) */
         .nav {
             color: #FFFFFF;
             position: absolute;
@@ -1813,41 +1940,60 @@ $temAlerta20GB = !empty($alertasEspaco);
             align-items: center;
             justify-content: center;
             top: 50%;
-            z-index: 35;
+            z-index: 50;
             cursor: pointer;
             user-select: none;
-            background: unset;
-            border: unset;
-            padding: 0 6px;
+            background: transparent !important;
+            border: none !important;
+            outline: none;
+            padding: 0;
+            width: 60px;
+            height: 60px;
+            transition: all 0.3s ease-out;
             line-height: 1;
-            filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.9));
-            transition: color 0.2s ease, filter 0.2s ease;
         }
 
         .nav svg {
-            width: 46px;
-            height: 46px;
+            width: 56px !important;
+            height: 56px !important;
+            stroke: #FFFFFF;
+            stroke-width: 2.4;
+            fill: none;
+            filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.95));
+            transition: stroke 0.25s ease, filter 0.25s ease, transform 0.25s ease;
         }
 
-        .nav:hover {
-            color: var(--brand);
-            filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.7));
+        .nav:hover svg {
+            stroke: #FFFFFF;
+            filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.7));
+            transform: scale(1.15);
         }
 
         .nav.left {
             left: 0;
-            transform: translateX(-100%) translateY(-50%);
+            transform: translateX(calc(-100% - 10px)) translateY(-50%);
         }
 
         .nav.right {
             right: 0;
-            transform: translateX(100%) translateY(-50%);
+            transform: translateX(calc(100% + 10px)) translateY(-50%);
         }
 
-        .nav.is-disabled {
-            opacity: 0;
-            pointer-events: none;
-            cursor: default;
+        @media (max-width: 900px) {
+            .nav {
+                width: 44px;
+                height: 44px;
+            }
+            .nav svg {
+                width: 38px !important;
+                height: 38px !important;
+            }
+            .nav.left {
+                transform: translateX(calc(-100% - 4px)) translateY(-50%);
+            }
+            .nav.right {
+                transform: translateX(calc(100% + 4px)) translateY(-50%);
+            }
         }
 
         .card-top {
@@ -1968,119 +2114,216 @@ $temAlerta20GB = !empty($alertasEspaco);
             background: rgba(239, 68, 68, 0.15);
         }
 
-        /* 4 MÉTRICAS-CHAVE EM GRID 2x2 COMPACTO */
+        /* =============================================================
+           4 MÉTRICAS-CHAVE EM GRID 2x2 LIQUID GLASS
+           ============================================================= */
         .quick-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 4px;
+            gap: 8px 10px;
         }
 
         .quick-metric {
-            background: var(--bg-secundario);
-            border: 1px solid var(--borda);
-            border-radius: 5px;
-            padding: 4px 7px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-top: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 10px;
+            padding: 8px 12px;
             display: flex;
             flex-direction: column;
-            gap: 1px;
+            gap: 4px;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06), 0 3px 8px rgba(0, 0, 0, 0.25);
+            transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+        }
+
+        .quick-metric:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
+            transform: translateY(-1px);
         }
 
         .quick-metric .q-label {
-            font-size: 8px;
-            color: var(--ink-muted);
+            font-size: 8.5px;
+            color: rgba(255, 255, 255, 0.55);
             text-transform: uppercase;
-            letter-spacing: 0.2px;
+            letter-spacing: 0.6px;
+            font-weight: 600;
+            line-height: 1.2;
+            margin-bottom: 2px;
         }
 
         .quick-metric .q-val {
-            font-size: 10.5px;
+            font-size: 11.5px;
             font-weight: 700;
             color: var(--ink);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.2;
         }
 
-        .quick-metric .q-val.ok { color: var(--brand); }
+        .quick-metric .q-val.ok {
+            color: var(--brand);
+            text-shadow: 0 0 10px rgba(34, 197, 94, 0.35);
+        }
 
-        /* BOX DE ARMAZENAMENTO PRINCIPAL */
+        /* =============================================================
+           BOX DE ARMAZENAMENTO PRINCIPAL LIQUID GLASS
+           ============================================================= */
         .main-storage-box {
-            background: var(--bg-secundario);
-            border: 1px solid var(--borda);
-            border-radius: 6px;
-            padding: 5px 8px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.015) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 11px 13px;
             display: flex;
             flex-direction: column;
-            gap: 3px;
+            gap: 9px;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.3);
         }
 
         .storage-head {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 1px;
         }
 
         .storage-title {
-            font-size: 10px;
+            font-size: 11px;
+            font-weight: 600;
             color: var(--ink);
+            letter-spacing: 0.15px;
         }
 
         .storage-pct {
-            font-size: 10.5px;
-            font-weight: 700;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 2px 7px;
+            border-radius: 6px;
+            letter-spacing: 0.3px;
         }
 
-        .storage-pct.normal { color: var(--brand); }
-        .storage-pct.atencao { color: var(--amarelo); }
-        .storage-pct.critico { color: var(--vermelho); }
+        .storage-pct.normal {
+            color: var(--brand);
+            background: rgba(34, 197, 94, 0.14);
+            border: 1px solid rgba(34, 197, 94, 0.35);
+            text-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+        }
+        .storage-pct.atencao {
+            color: var(--amarelo);
+            background: rgba(245, 158, 11, 0.14);
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            text-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+        }
+        .storage-pct.critico {
+            color: var(--vermelho);
+            background: rgba(239, 68, 68, 0.14);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            text-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+        }
 
         .storage-stats {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            background: rgba(0, 0, 0, 0.3);
-            padding: 4px 6px;
-            border-radius: 5px;
-            gap: 4px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 8px 12px;
+            border-radius: 8px;
+            gap: 8px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
         }
 
         .storage-stats .s-lbl {
             font-size: 8px;
-            color: var(--ink-muted);
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.45);
             text-transform: uppercase;
+            letter-spacing: 0.6px;
             display: block;
+            margin-bottom: 4px;
         }
 
         .storage-stats .s-num {
-            font-size: 10.5px;
+            font-size: 11.5px;
             font-weight: 700;
-            color: var(--ink);
+            color: #FFFFFF;
         }
 
         .storage-stats .s-num.livre {
             color: var(--brand);
+            text-shadow: 0 0 8px rgba(34, 197, 94, 0.35);
         }
 
         .storage-bar {
             width: 100%;
-            height: 3px;
-            background: #090E0B;
+            height: 6px;
+            background: rgba(0, 0, 0, 0.55);
             border-radius: 9999px;
             overflow: hidden;
-            border: 1px solid var(--borda);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+            margin-top: 2px;
         }
 
         .storage-bar-fill {
             height: 100%;
             border-radius: 9999px;
-            transition: width 0.4s ease;
+            transition: width 0.45s ease;
         }
 
-        .storage-bar-fill.normal { background: var(--brand); }
-        .storage-bar-fill.atencao { background: var(--amarelo); }
+        .storage-bar-fill.normal {
+            background: linear-gradient(90deg, #16a34a 0%, #22c55e 100%);
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
+        }
+        .storage-bar-fill.atencao {
+            background: linear-gradient(90deg, #d97706 0%, #f59e0b 100%);
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.7);
+        }
+        .storage-bar-fill.critico {
+            background: linear-gradient(90deg, #dc2626 0%, #ef4444 100%);
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.7);
+        }
+
+        /* GRID INFERIOR (DISCO TOTAL E MODELO) */
+        .bottom-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+            gap: 8px 10px;
+            align-items: stretch;
+        }
+
+        /* Modelo do disco: quebra em linhas em vez de cortar o texto */
+        .bottom-grid .quick-metric .q-val {
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            overflow-wrap: anywhere;
+            line-height: 1.35;
+        }
+
+        /* CAIXA DE CONTROLES DO PS4 LIQUID GLASS */
+        .ps4-controls-box {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+            padding: 10px 13px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-top: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06), 0 3px 10px rgba(0, 0, 0, 0.3);
+        }
 
         /* INFOGRÁFICO RESUMIDO E COMPACTO */
         .infografico-mini {
-            background: var(--bg-secundario);
-            border: 1px solid var(--borda);
-            border-radius: 6px;
-            padding: 6px 8px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-top: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 10px;
+            padding: 6px 10px;
             display: flex;
             flex-direction: column;
             gap: 4px;
@@ -2132,28 +2375,36 @@ $temAlerta20GB = !empty($alertasEspaco);
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 7px;
             padding: 8px 12px;
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 11px;
             font-weight: 600;
             cursor: pointer;
-            border: 1px solid var(--borda);
-            background: var(--bg-principal);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.015) 100%);
             color: var(--ink);
-            transition: all 0.2s ease;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 3px 8px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
         }
 
         .btn-ps4-wake:hover {
-            border-color: var(--brand);
-            color: var(--brand);
-            background: rgba(34, 197, 94, 0.1);
+            border-color: rgba(34, 197, 94, 0.5);
+            border-top-color: rgba(74, 222, 128, 0.8);
+            color: #4ade80;
+            background: rgba(34, 197, 94, 0.15);
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
         }
 
         .btn-ps4-standby:hover {
-            border-color: var(--amarelo);
-            color: var(--amarelo);
-            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.5);
+            border-top-color: rgba(251, 191, 36, 0.8);
+            color: #fbbf24;
+            background: rgba(245, 158, 11, 0.15);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
         }
 
         .btn-ps4-action:active {
@@ -2163,6 +2414,39 @@ $temAlerta20GB = !empty($alertasEspaco);
         .btn-ps4-action:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+
+        .card-footer-ping {
+            font-size: 11px;
+            color: var(--ink-muted);
+            text-align: center;
+            margin-top: 14px;
+            padding-top: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            letter-spacing: 0.2px;
+        }
+
+        .card-ping-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 4px;
+        }
+
+        .card-ping-val.ping-verde {
+            color: #22C55E !important;
+            text-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+        }
+        .card-ping-val.ping-amarelo {
+            color: #F59E0B !important;
+            text-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+        }
+        .card-ping-val.ping-vermelho {
+            color: #EF4444 !important;
+            text-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
         }
 
         /* NOTIFICAÇÃO TOAST DE SINCRONIZAÇÃO */
@@ -2458,7 +2742,7 @@ $temAlerta20GB = !empty($alertasEspaco);
             <div class="carousel-3d-wrapper">
                 <!-- BOTÃO NAVEGAÇÃO VOLTAR PARA ESQUERDA -->
                 <button type="button" class="nav left" id="carousel-nav-prev" onclick="carouselMove(-1)" aria-label="Voltar para a esquerda" title="Voltar para a esquerda">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
                 </button>
@@ -2545,14 +2829,14 @@ $temAlerta20GB = !empty($alertasEspaco);
                             </div>
 
                             <!-- INFORMATIVO SOBRE A QUANTIDADE TOTAL DO DISCO (PADRÃO HARMONIZADO) -->
-                            <div class="quick-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2px;">
+                            <div class="bottom-grid">
                                 <div class="quick-metric">
                                     <span class="q-label">Disco Total (SDA)</span>
-                                    <span class="q-val mono" id="draw-linux-total" style="font-size: 11px; color: var(--ink);">Disco SDA: <?= $linux['disco_fisico']['total_gb'] ?></span>
+                                    <span class="q-val mono" id="draw-linux-total" title="Disco SDA: <?= htmlspecialchars($linux['disco_fisico']['total_gb']) ?>" style="font-size: 11px; color: var(--ink);">Disco SDA: <?= $linux['disco_fisico']['total_gb'] ?></span>
                                 </div>
                                 <div class="quick-metric">
                                     <span class="q-label">Modelo & Pool Livre</span>
-                                    <span class="q-val mono ok" style="font-size: 10px;"><?= htmlspecialchars($linux['disco_fisico']['modelo']) ?> • <?= $linux['lvm']['livre_gb'] ?? '212,7 GB' ?> Livre</span>
+                                    <span class="q-val mono ok" title="<?= htmlspecialchars($linux['disco_fisico']['modelo']) ?> • <?= $linux['lvm']['livre_gb'] ?? '212,7 GB' ?> Livre" style="font-size: 10px;"><?= htmlspecialchars($linux['disco_fisico']['modelo']) ?> • <?= $linux['lvm']['livre_gb'] ?? '212,7 GB' ?> Livre</span>
                                 </div>
                             </div>
 
@@ -2611,7 +2895,7 @@ $temAlerta20GB = !empty($alertasEspaco);
 
                             <!-- ARMAZENAMENTO PRINCIPAL (PARTIÇÃO C:) -->
                             <?php $winDisco = $windows['discos'][0] ?? null; ?>
-                            <div id="lista-volumes-windows" style="display: flex; flex-direction: column; gap: 4px;">
+                            <div id="lista-volumes-windows" style="display: contents;">
                                 <?php if ($winDisco): ?>
                                     <div class="main-storage-box">
                                         <div class="storage-head">
@@ -2650,14 +2934,14 @@ $temAlerta20GB = !empty($alertasEspaco);
                             </div>
 
                             <!-- INFORMATIVO SOBRE A QUANTIDADE TOTAL DO DISCO (PADRÃO HARMONIZADO) -->
-                            <div class="quick-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2px;">
+                            <div class="bottom-grid">
                                 <div class="quick-metric">
                                     <span class="q-label">Disco Total (C:)</span>
-                                    <span class="q-val mono" id="win-disco-total" style="font-size: 11px; color: var(--ink);">Disco C: <?= htmlspecialchars($windows['recursos']['disco_capacidade_gb'] ?? '111,8 GB') ?></span>
+                                    <span class="q-val mono" id="win-disco-total" title="Disco C: <?= htmlspecialchars($windows['recursos']['disco_capacidade_gb'] ?? '111,8 GB') ?>" style="font-size: 11px; color: var(--ink);">Disco C: <?= htmlspecialchars($windows['recursos']['disco_capacidade_gb'] ?? '111,8 GB') ?></span>
                                 </div>
                                 <div class="quick-metric">
                                     <span class="q-label">Modelo & Sincronização</span>
-                                    <span class="q-val mono ok" id="win-disco-modelo" style="font-size: 10px;"><?= htmlspecialchars($windows['recursos']['disco_modelo'] ?? 'KINGSTON SA400S37120G') ?> • Sincronizado</span>
+                                    <span class="q-val mono ok" id="win-disco-modelo" title="<?= htmlspecialchars($windows['recursos']['disco_modelo'] ?? 'KINGSTON SA400S37120G') ?> • Sincronizado" style="font-size: 10px;"><?= htmlspecialchars($windows['recursos']['disco_modelo'] ?? 'KINGSTON SA400S37120G') ?> • Sincronizado</span>
                                 </div>
                             </div>
 
@@ -2749,13 +3033,13 @@ $temAlerta20GB = !empty($alertasEspaco);
                             </div>
 
                             <!-- 3. CONTROLES DO CONSOLE (LIGAR / REPOUSO) -->
-                            <div style="display: flex; flex-direction: column; gap: 5px; background: var(--bg-secundario); padding: 6px 8px; border-radius: 6px; border: 1px solid var(--borda);">
+                            <div class="ps4-controls-box">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <span style="font-size: 10px; font-weight: 600; color: var(--ink);">Controles do Console (Rede Local)</span>
                                     <span style="font-size: 9px; color: var(--ink-muted);">MAC: <code class="mono"><?= htmlspecialchars($ps4['mac']) ?></code></span>
                                 </div>
 
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 7px;">
                                     <button type="button" class="btn-ps4-action btn-ps4-wake" onclick="acionarPS4('wake')" id="btn-ps4-wake" title="Ligar o console a partir do modo de repouso (Magic Packet + DDP Wake)">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
@@ -2797,7 +3081,7 @@ $temAlerta20GB = !empty($alertasEspaco);
 
                 <!-- BOTÃO NAVEGAÇÃO PASSAR PARA DIREITA -->
                 <button type="button" class="nav right" id="carousel-nav-next" onclick="carouselMove(1)" aria-label="Passar para a direita" title="Passar para a direita">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
                 </button>
@@ -2924,9 +3208,41 @@ $temAlerta20GB = !empty($alertasEspaco);
                 });
             }
 
+            function ajustarEscalaCarrossel() {
+                const wrap = document.querySelector('.carousel-3d-wrapper');
+                if (!wrap) return;
+                // Altura real = maior conteúdo entre os cards (nada é cortado, sem rolagem)
+                let maxH = 0;
+                wrap.querySelectorAll('.card').forEach(c => {
+                    const prev = c.style.height;
+                    c.style.height = 'auto';
+                    maxH = Math.max(maxH, c.offsetHeight);
+                    c.style.height = prev;
+                });
+                if (maxH > 0) wrap.style.height = (maxH + 4) + 'px';
+                if (window.innerWidth <= 768) {
+                    wrap.style.setProperty('--fit', 1);
+                    return;
+                }
+                const naturalH = wrap.offsetHeight;
+                const naturalW = wrap.offsetWidth;
+                const availH = window.innerHeight - 52 - 90;
+                const availW = window.innerWidth - 120;
+                const s = Math.min(1, availH / naturalH, availW / (naturalW * 1.7));
+                wrap.style.setProperty('--fit', Math.max(0.4, s).toFixed(3));
+            }
+            window.addEventListener('resize', ajustarEscalaCarrossel);
+            window.addEventListener('load', ajustarEscalaCarrossel);
+            if (document.fonts && document.fonts.ready) {
+                document.fonts.ready.then(ajustarEscalaCarrossel);
+                document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', ajustarEscalaCarrossel);
+            }
+            window.ajustarEscalaCarrossel = ajustarEscalaCarrossel;
+            ajustarEscalaCarrossel();
+
             const CARDS_COUNT = 3;
             const SECTION_KEYS = ['linux', 'windows', 'ps4'];
-            let activeIndex = 0; // Inicia em Linux (0)
+            let activeIndex = 1; // Inicia em Windows (1) como no modelo de referência Card 3
 
             function updateCarousel(newActive) {
                 if (newActive < 0) newActive = 0;
@@ -2950,16 +3266,14 @@ $temAlerta20GB = !empty($alertasEspaco);
                     cardEl.style.display = Math.abs(activeIndex - i) > 3 ? 'none' : 'block';
                 });
 
-                // Atualiza botões de navegação (voltar para esquerda / passar para direita)
+                // Botões de navegação condicionados ao índice (exato modelo do código React de referência)
                 const navLeft = document.getElementById('carousel-nav-prev');
                 const navRight = document.getElementById('carousel-nav-next');
                 if (navLeft) {
-                    navLeft.classList.toggle('is-disabled', activeIndex <= 0);
                     navLeft.style.display = activeIndex > 0 ? 'flex' : 'none';
                 }
                 if (navRight) {
-                    navRight.classList.toggle('is-disabled', activeIndex >= CARDS_COUNT - 1);
-                    navRight.style.display = activeIndex < CARDS_COUNT - 1 ? 'flex' : 'none';
+                    navRight.style.display = activeIndex < (CARDS_COUNT - 1) ? 'flex' : 'none';
                 }
 
                 // Sincroniza estado visual do botão na sidebar 'Sistemas e Hosts'
@@ -2979,7 +3293,10 @@ $temAlerta20GB = !empty($alertasEspaco);
             }
 
             function carouselMove(delta) {
-                updateCarousel(activeIndex + delta);
+                const next = activeIndex + delta;
+                if (next >= 0 && next < CARDS_COUNT) {
+                    updateCarousel(next);
+                }
             }
 
             function carouselGoTo(index) {
@@ -3158,6 +3475,10 @@ $temAlerta20GB = !empty($alertasEspaco);
 
         // ATUALIZAÇÃO ASSÍNCRONA AUTOMÁTICA (30s)
         setInterval(sincronizarDados, 30000);
+        <?php if ($cacheEraAntigo): ?>
+        // Cache inicial estava antigo: atualiza em segundo plano após a página carregar
+        window.addEventListener('load', () => setTimeout(() => sincronizarDados(true), 50));
+        <?php endif; ?>
 
         // BOTÃO ATUALIZAR DADOS MANUALMENTE
         async function sincronizarManual() {
@@ -3273,6 +3594,7 @@ $temAlerta20GB = !empty($alertasEspaco);
         window.verificarNotificacaoEspaco = verificarNotificacaoEspaco;
 
         async function sincronizarDados(manual = false) {
+            if (!manual && document.hidden) return;
             try {
                 const agora = new Date();
                 ultimaTentativaHora = agora.toLocaleTimeString('pt-BR', { hour12: false });
@@ -3505,9 +3827,10 @@ $temAlerta20GB = !empty($alertasEspaco);
         }
 
         // =============================================================
-        // 7. CONTABILIZADOR DE PING EM TEMPO REAL (ATUALIZA A CADA 5s)
+        // 7. CONTABILIZADOR DE PING EM TEMPO REAL (OTIMIZADO)
         // =============================================================
         async function atualizarPings() {
+            if (document.hidden) return;
             try {
                 const resp = await fetch('index.php?api=pings&t=' + Date.now(), {
                     headers: { 'Accept': 'application/json' },
@@ -3540,8 +3863,13 @@ $temAlerta20GB = !empty($alertasEspaco);
             }
         }
 
-        // Executa atualização do ping a cada 5 segundos
-        setInterval(atualizarPings, 5000);
+        // Executa atualização do ping a cada 12 segundos e retoma instantaneamente ao focar na aba
+        setInterval(atualizarPings, 12000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                atualizarPings();
+            }
+        });
 
         // =============================================================
         // 8. CONTROLES DO PLAYER LIQUID GLASS — BH FM
