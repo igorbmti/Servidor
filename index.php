@@ -1215,101 +1215,126 @@ $temAlerta20GB = !empty($alertasEspaco);
             user-select: none;
         }
 
-        /* HEADER ESPECIFICANDO CONTROLE PELA REDE */
+        /* HEADER ESPECIFICANDO CONTROLE PELA REDE (LIQUID FLUID GLASS CAPSULE) */
         .sidebar-net-header {
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
-            padding: 4px 8px 10px 8px;
-            border-bottom: 1px solid rgba(38, 53, 43, 0.5);
-            margin-bottom: 2px;
-            width: 100%;
-            max-width: 165px;
-            transition: border-color 0.25s ease;
+            padding: 7px 16px 7px 12px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%), rgba(14, 22, 18, 0.65);
+            backdrop-filter: blur(16px) saturate(190%);
+            -webkit-backdrop-filter: blur(16px) saturate(190%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 999px;
+            box-shadow: 
+                0 8px 20px -4px rgba(0, 0, 0, 0.55),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.18),
+                inset 0 -1px 1px 0 rgba(0, 0, 0, 0.4);
+            margin-bottom: 6px;
+            width: auto;
+            max-width: 175px;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .sidebar-net-header:hover {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%), rgba(18, 28, 22, 0.78);
+            border-color: rgba(34, 197, 94, 0.35);
+            border-top-color: rgba(74, 222, 128, 0.6);
+            transform: translateY(-1px);
+            box-shadow: 
+                0 12px 24px -4px rgba(0, 0, 0, 0.65),
+                0 0 14px -2px rgba(34, 197, 94, 0.25),
+                inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.25);
         }
 
         .net-radar-pulse {
             position: relative;
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             display: grid;
             place-items: center;
         }
 
-        /* LUZ DO RADAR EM 'SISTEMAS E HOSTS': PERMANECE VERDE COM PULSO */
+        /* LUZ DO RADAR EM 'SISTEMAS E HOSTS': PULSO LIQUID FLUID */
         .net-radar-pulse .radar-ping {
             display: block;
             position: absolute;
             width: 100%;
             height: 100%;
             border-radius: 50%;
-            background: var(--brand);
-            opacity: 0.7;
-            animation: radarPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            background: radial-gradient(circle, rgba(34, 197, 94, 0.8) 0%, rgba(34, 197, 94, 0) 70%);
+            opacity: 0.75;
+            animation: radarPulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
         }
 
         .net-radar-pulse .radar-dot {
-            width: 7px;
-            height: 7px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: var(--brand);
-            box-shadow: 0 0 10px var(--brand);
+            background: #22C55E;
+            box-shadow: 
+                0 0 10px #22C55E,
+                0 0 18px rgba(34, 197, 94, 0.6),
+                inset 0 1px 1px rgba(255, 255, 255, 0.6);
             z-index: 1;
-            transition: background 0.25s, box-shadow 0.25s;
+            transition: all 0.3s ease;
         }
 
         .net-header-info {
             display: flex;
             flex-direction: column;
+            text-align: left;
         }
 
         .net-badge-title {
-            font-size: 11px;
+            font-size: 10.5px;
             font-weight: 700;
             letter-spacing: 0.8px;
-            color: var(--ink-sec);
+            color: #FFFFFF;
             text-transform: uppercase;
+            line-height: 1.2;
             transition: color 0.25s ease;
         }
 
         .net-badge-sub {
-            font-size: 10px;
-            color: var(--ink-muted);
+            font-size: 9.5px;
+            color: var(--ink-sec);
+            line-height: 1.2;
         }
 
         /* ESTADOS DE FOCO / SELEÇÃO */
         .net-radar-pulse.is-online .radar-dot {
-            background: var(--brand);
-            box-shadow: 0 0 10px var(--brand);
+            background: #22C55E;
+            box-shadow: 0 0 10px #22C55E, 0 0 18px rgba(34, 197, 94, 0.6);
         }
         .net-radar-pulse.is-online .radar-ping {
             display: block;
-            background: var(--brand);
-            opacity: 0.7;
-            animation: radarPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            background: radial-gradient(circle, rgba(34, 197, 94, 0.8) 0%, rgba(34, 197, 94, 0) 70%);
+            animation: radarPulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
         }
         .sidebar-net-header.is-online .net-badge-title {
-            color: var(--brand);
+            color: #FFFFFF;
         }
 
         .net-radar-pulse.is-offline .radar-dot {
             background: var(--vermelho);
-            box-shadow: 0 0 10px var(--vermelho);
+            box-shadow: 0 0 10px var(--vermelho), 0 0 18px rgba(239, 68, 68, 0.6);
         }
         .net-radar-pulse.is-offline .radar-ping {
             display: block;
-            background: var(--vermelho);
-            opacity: 0.7;
-            animation: radarPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            background: radial-gradient(circle, rgba(239, 68, 68, 0.8) 0%, rgba(239, 68, 68, 0) 70%);
+            animation: radarPulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
         }
         .sidebar-net-header.is-offline .net-badge-title {
             color: var(--vermelho);
         }
 
         @keyframes radarPulse {
-            0% { transform: scale(0.8); opacity: 0.8; }
-            70%, 100% { transform: scale(2.4); opacity: 0; }
+            0% { transform: scale(0.7); opacity: 0.9; }
+            50% { opacity: 0.4; }
+            100% { transform: scale(2.8); opacity: 0; }
         }
 
         /* PILHA DE BOTÕES (DEVICES STACK) COMPACTA COM LIQUID GLASS */
