@@ -1328,9 +1328,9 @@ $temAlerta20GB = !empty($alertasEspaco);
             max-width: 125px;
             display: flex;
             align-items: center;
-            justify-content: flex-start;
-            gap: 9px;
-            padding: 5px 14px;
+            justify-content: center;
+            gap: 0;
+            padding: 7px 14px;
             background: rgba(16, 23, 19, 0.65);
             backdrop-filter: blur(14px) saturate(180%);
             -webkit-backdrop-filter: blur(14px) saturate(180%);
@@ -1342,7 +1342,7 @@ $temAlerta20GB = !empty($alertasEspaco);
                 inset 0 -1px 1px 0 rgba(0, 0, 0, 0.45);
             color: var(--ink-sec);
             cursor: pointer;
-            text-align: left;
+            text-align: center;
             font-family: 'Inter', system-ui, sans-serif;
             transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
             user-select: none;
@@ -1375,12 +1375,11 @@ $temAlerta20GB = !empty($alertasEspaco);
         }
 
         .device-btn .btn-os-icon {
-            display: none;
-        }
-
-        .device-btn .btn-os-icon svg {
-            width: 14px;
-            height: 14px;
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+            visibility: hidden !important;
         }
 
         .device-btn .btn-dev-label {
